@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Fantasy NBA</title>
+<style>
+:root{
+  --bg:#0f1115; --surface:#181b22; --surface2:#20242d; --line:#2b303b;
+  --text:#eef0f4; --muted:#9aa2b1; --accent:#f28c28; --accent-ink:#1a1206;
+  --ok:#3fb37f; --bad:#e5534b; --radius:12px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+body{padding:0 16px calc(24px + env(safe-area-inset-bottom));max-width:720px;margin:0 auto}
+h1{font-size:22px;margin:20px 0 4px} h2{font-size:17px;margin:20px 0 8px} h3{font-size:15px;margin:14px 0 6px}
+p{margin:6px 0} .muted{color:var(--muted)} .small{font-size:13px}
+a{color:var(--accent)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin:10px 0}
+input,select,button{font:inherit;color:inherit}
+input,select{width:100%;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin:4px 0 10px}
+button{background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:11px 14px;font-weight:600;cursor:pointer}
+button.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+button.sm{padding:6px 10px;font-size:13px}
+button:disabled{opacity:.35;cursor:not-allowed}
+.row{display:flex;gap:8px;align-items:center}
+.row>*{flex:1}
+.between{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.tabs{display:flex;gap:4px;overflow-x:auto;margin:12px -16px 0;padding:0 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
+.tabs button{background:none;color:var(--muted);border-radius:0;border-bottom:2px solid transparent;padding:12px 10px;white-space:nowrap}
+.tabs button.on{color:var(--text);border-bottom-color:var(--accent)}
+.pill{display:inline-block;font-size:12px;padding:2px 8px;border-radius:99px;background:var(--surface2);border:1px solid var(--line);color:var(--muted)}
+.pill.accent{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.pill.ok{color:var(--ok);border-color:var(--ok)}
+.list{list-style:none;margin:0;padding:0}
+.list li{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+.list li:last-child{border-bottom:0}
+.list .grow{flex:1;min-width:0}
+.name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.price{font-variant-numeric:tabular-nums;font-weight:700;min-width:38px;text-align:right}
+.clock{background:var(--accent);color:var(--accent-ink);border-radius:var(--radius);padding:12px 14px;margin:12px 0;font-weight:600}
+.clock.wait{background:var(--surface2);color:var(--text);border:1px solid var(--line)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center}
+.stat b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--muted)}
+.msg{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));max-width:688px;margin:0 auto;padding:12px 14px;border-radius:10px;background:var(--surface2);border:1px solid var(--line);z-index:20}
+.msg.err{border-color:var(--bad)}
+.board{display:grid;gap:8px}
+.board .col h3{margin:0 0 6px}
+.hidden{display:none}
+code{background:var(--surface2);padding:2px 6px;border-radius:6px;font-size:14px}
+</style>
+</head>
+<body>
+<div id="app"><p class="muted" style="margin-top:40px">Cargando…</p></div>
+<div id="msg" class="msg hidden"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const SUPABASE_URL = 'https://chobiypolwisbaeccsxw.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_-h8fYrI6w6VbDchcxPxXzA_cl6movfG';
+const SEASON = '2026-27';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const AWARDS = [
+  ['mvp','MVP'],['roy','Rookie del año'],['dpoy','Mejor defensor'],
+  ['smoy','Sexto hombre'],['mip','Jugador más mejorado'],['champion','Campeón NBA']
+];
+const TEAMS = 'ATL BOS BKN CHA CHI CLE DAL DEN DET GSW HOU IND LAC LAL MEM MIA MIL MIN NOP NYK OKC ORL PHI PHX POR SAC SAS TOR UTA WAS'.split(' ');
+
+const S = { user:null, profile:null, leagues:[], league:null, tab:'draft', players:null, members:[], picks:[], state:null, poll:null, q:'', team:'', onlyRookies:false };
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function toast(t, err){ const m=$('#msg'); m.textContent=t; m.className='msg'+(err?' err':''); clearTimeout(toast.t); toast.t=setTimeout(()=>m.className='msg hidden', 3500); }
+function fail(e){ toast((e && (e.message||e.error_description)) || String(e), true); }
+
+// ---------- Auth ----------
+function viewAuth(mode='login'){
+  $('#app').innerHTML = `
+    <h1>Fantasy NBA</h1>
+    <p class="muted">Liga privada · temporada ${SEASON}</p>
+    <div class="card">
+      <div class="row" style="margin-bottom:10px">
+        <button class="${mode==='login'?'':'ghost'}" onclick="viewAuth('login')">Entrar</button>
+        <button class="${mode==='signup'?'':'ghost'}" onclick="viewAuth('signup')">Crear cuenta</button>
+      </div>
+      <form id="f">
+        ${mode==='signup'?'<label class="small muted">Tu nombre (lo verán los demás)</label><input name="name" required maxlength="30">':''}
+        <label class="small muted">Email</label><input name="email" type="email" required autocomplete="email">
+        <label class="small muted">Contraseña</label><input name="pass" type="password" required minlength="8" autocomplete="${mode==='login'?'current-password':'new-password'}">
+        <button style="width:100%">${mode==='login'?'Entrar':'Crear cuenta'}</button>
+      </form>
+    </div>`;
+  $('#f').onsubmit = async e => {
+    e.preventDefault(); const f = new FormData(e.target);
+    try{
+      if(mode==='signup'){
+        const { data, error } = await sb.auth.signUp({ email:f.get('email'), password:f.get('pass'), options:{ data:{ display_name:f.get('name') } } });
+        if(error) throw error;
+        if(!data.session){ toast('Cuenta creada. Revisa tu email para confirmarla.'); return; }
+        await sb.from('profiles').update({ display_name:f.get('name') }).eq('id', data.user.id);
+      } else {
+        const { error } = await sb.auth.signInWithPassword({ email:f.get('email'), password:f.get('pass') });
+        if(error) throw error;
+      }
+    }catch(err){ fail(err); }
+  };
+}
+
+// ---------- Home ----------
+async function loadHome(){
+  const { data:prof } = await sb.from('profiles').select('*').eq('id', S.user.id).maybeSingle();
+  S.profile = prof;
+  const { data:mem, error } = await sb.from('league_members').select('team_name, leagues(*)').eq('user_id', S.user.id);
+  if(error) return fail(error);
+  S.leagues = (mem||[]).map(m => ({ ...m.leagues, my_team:m.team_name }));
+  const saved = localGet('league');
+  const l = S.leagues.find(x => x.id === saved) || (S.leagues.length === 1 ? S.leagues[0] : null);
+  if(l) return openLeague(l.id);
+  viewHome();
+}
+function viewHome(){
+  stopPoll();
+  $('#app').innerHTML = `
+    <div class="between"><h1>Hola, ${esc(S.profile?.display_name || '')}</h1><button class="ghost sm" onclick="logout()">Salir</button></div>
+    ${S.leagues.length ? `<h2>Tus ligas</h2>${S.leagues.map(l=>`
+      <div class="card between"><div><div class="name">${esc(l.name)}</div><div class="small muted">${esc(l.my_team)}</div></div>
+      <button class="sm" onclick="openLeague('${l.id}')">Entrar</button></div>`).join('')}` : ''}
+    <h2>Unirme con código</h2>
+    <form id="fj" class="card">
+      <label class="small muted">Código de invitación</label><input name="code" required>
+      <label class="small muted">Nombre de tu equipo</label><input name="team" required maxlength="30">
+      <button style="width:100%">Unirme</button>
+    </form>
+    <h2>Crear liga</h2>
+    <form id="fc" class="card">
+      <label class="small muted">Nombre de la liga</label><input name="name" required maxlength="40">
+      <label class="small muted">Nombre de tu equipo</label><input name="team" required maxlength="30">
+      <button style="width:100%">Crear y ser comisionado</button>
+    </form>`;
+  $('#fj').onsubmit = async e => { e.preventDefault(); const f=new FormData(e.target);
+    const { data, error } = await sb.rpc('join_league', { p_code:f.get('code'), p_team_name:f.get('team') });
+    if(error) return fail(error); toast('Dentro de la liga'); openLeague(data); };
+  $('#fc').onsubmit = async e => { e.preventDefault(); const f=new FormData(e.target);
+    const { data, error } = await sb.rpc('create_league', { p_name:f.get('name'), p_team_name:f.get('team') });
+    if(error) return fail(error); toast('Liga creada'); openLeague(data); };
+}
+async function logout(){ localSet('league',''); await sb.auth.signOut(); }
+
+// ---------- League ----------
+async function openLeague(id){
+  localSet('league', id);
+  const { data:l, error } = await sb.from('leagues').select('*').eq('id', id).single();
+  if(error) return fail(error);
+  S.league = l;
+  if(!S.players) await loadPlayers();
+  await refreshLeague();
+  S.tab = l.draft_status === 'cerrado' ? 'equipo' : 'draft';
+  render(); startPoll();
+}
+async function loadPlayers(){
+  const all = []; let from = 0;
+  while(true){
+    const { data, error } = await sb.from('players').select('id,name,team,is_rookie,draft_pick,player_prices(price_m,pts_per_game)').eq('active', true).eq('player_prices.season', SEASON).range(from, from+999);
+    if(error) { fail(error); break; }
+    all.push(...data); if(data.length < 1000) break; from += 1000;
+  }
+  S.players = all.map(p => ({ id:p.id, name:p.name, team:p.team, rookie:p.is_rookie, pick:p.draft_pick,
+    price:p.player_prices?.[0]?.price_m ?? 1, fp:p.player_prices?.[0]?.pts_per_game }))
+    .sort((a,b)=> b.price-a.price || (b.fp??0)-(a.fp??0) || a.name.localeCompare(b.name));
+  S.byId = Object.fromEntries(S.players.map(p=>[p.id,p]));
+}
+async function refreshLeague(){
+  const id = S.league.id;
+  const [m, pk, st, lg] = await Promise.all([
+    sb.from('league_members').select('user_id,team_name,draft_position,profiles(display_name)').eq('league_id', id),
+    sb.from('draft_picks').select('*').eq('league_id', id).order('pick_no'),
+    sb.rpc('draft_state', { p_league:id }),
+    sb.from('leagues').select('*').eq('id', id).single()
+  ]);
+  if(m.error) return fail(m.error);
+  S.members = m.data.map(x=>({ id:x.user_id, team:x.team_name, pos:x.draft_position, name:x.profiles?.display_name || '—' }))
+    .sort((a,b)=>(a.pos??99)-(b.pos??99));
+  S.picks = pk.data || []; S.state = st.data; if(lg.data) S.league = lg.data;
+}
+function startPoll(){ stopPoll(); S.poll = setInterval(async ()=>{
+  if(document.hidden || !S.league || S.league.draft_status === 'cerrado' && S.tab !== 'draft') return;
+  const before = (S.picks.length) + S.league.draft_status;
+  await refreshLeague();
+  if(before !== (S.picks.length + S.league.draft_status) && !isTyping()) render();
+}, 4000); }
+function stopPoll(){ if(S.poll) clearInterval(S.poll); S.poll = null; }
+const isTyping = () => document.activeElement && ['INPUT','SELECT'].includes(document.activeElement.tagName);
+const member = uid => S.members.find(m=>m.id===uid) || { team:'—', name:'—' };
+const isComm = () => S.league.commissioner_id === S.user.id;
+
+function myTeamInfo(uid = S.user.id){
+  const mine = S.picks.filter(p=>p.user_id===uid);
+  const spent = mine.reduce((a,p)=>a+p.price_m,0);
+  const hasRookie = mine.some(p=>S.byId[p.player_id]?.rookie);
+  return { mine, spent, left: S.league.budget_m - spent, slots: S.league.roster_size - mine.length, hasRookie };
+}
+
+function render(){
+  const tabs = [['draft','Draft'],['equipo','Mi equipo'],['pred','Predicciones'],['liga','Liga']];
+  $('#app').innerHTML = `
+    <div class="between" style="margin-top:14px">
+      <div><div class="small muted">${esc(S.league.name)}</div><div class="name" style="font-size:18px">${esc(member(S.user.id).team)}</div></div>
+      <button class="ghost sm" onclick="viewHome()">Ligas</button>
+    </div>
+    <nav class="tabs">${tabs.map(([k,t])=>`<button class="${S.tab===k?'on':''}" onclick="S.tab='${k}';render()">${t}</button>`).join('')}</nav>
+    <main id="tab"></main>`;
+  ({ draft:renderDraft, equipo:renderTeam, pred:renderPred, liga:renderLiga })[S.tab]();
+}
+
+// ---------- Draft ----------
+function renderDraft(){
+  const st = S.state || {}; const status = S.league.draft_status;
+  const me = myTeamInfo();
+  const taken = new Set(S.picks.map(p=>p.player_id));
+  const onClock = st.on_clock; const myTurn = onClock === S.user.id;
+  const actingFor = myTurn ? S.user.id : (isComm() && onClock ? onClock : null);
+  const actor = actingFor ? myTeamInfo(actingFor) : null;
+  let head = '';
+  if(status === 'pendiente') head = `<div class="clock wait">El draft aún no ha empezado. ${isComm()?'Fija el orden y arráncalo desde la pestaña Liga.':'El comisionado lo abrirá.'}</div>`;
+  else if(status === 'cerrado') head = `<div class="clock wait">Draft terminado. ¡A por la temporada!</div>`;
+  else head = `<div class="clock ${myTurn?'':'wait'}">${myTurn ? '¡Te toca!' : 'Elige ' + esc(member(onClock).team)} · pick ${st.next_pick+1} de ${st.total_picks} · ronda ${Math.floor(st.next_pick/S.members.length)+1}</div>`;
+
+  const q = S.q.toLowerCase();
+  const avail = S.players.filter(p => !taken.has(p.id) && (!q || p.name.toLowerCase().includes(q)) && (!S.team || p.team===S.team) && (!S.onlyRookies || p.rookie)).slice(0, 80);
+  const canPick = p => {
+    if(!actor || status!=='en_curso') return false;
+    const leftAfter = actor.slots - 1;
+    if(actor.spent + p.price + leftAfter > S.league.budget_m) return false;
+    if(leftAfter === 0 && !actor.hasRookie && !p.rookie) return false;
+    return true;
+  };
+  $('#tab').innerHTML = `
+    ${head}
+    <div class="stats">
+      <div class="stat"><b>${me.left}M</b><span>presupuesto</span></div>
+      <div class="stat"><b>${me.slots}</b><span>huecos</span></div>
+      <div class="stat"><b>${me.hasRookie?'✓':'—'}</b><span>rookie</span></div>
+    </div>
+    ${actingFor && !myTurn ? `<p class="small muted">Como comisionado puedes elegir por ${esc(member(actingFor).team)} si no está conectado.</p>`:''}
+    <div class="row">
+      <input id="q" placeholder="Buscar jugador" value="${esc(S.q)}">
+      <select id="team" style="max-width:110px"><option value="">Equipo</option>${TEAMS.map(t=>`<option ${S.team===t?'selected':''}>${t}</option>`).join('')}</select>
+    </div>
+    <label class="small muted"><input type="checkbox" id="rk" ${S.onlyRookies?'checked':''} style="width:auto;margin:0 6px 0 0">Solo rookies</label>
+    <ul class="list card" style="padding:0 14px">
+      ${avail.map(p=>`<li>
+        <span class="price">${p.price}M</span>
+        <div class="grow"><div class="name">${esc(p.name)}</div>
+          <div class="small muted">${p.team}${p.rookie?' · <span class="pill ok">rookie'+(p.pick?' #'+p.pick:'')+'</span>':''}${p.fp?' · '+Number(p.fp).toFixed(1)+' pts/p':''}</div></div>
+        ${status==='en_curso'?`<button class="sm" ${canPick(p)?'':'disabled'} onclick="pick(${p.id})">${S.armed===p.id?'Confirmar':'Elegir'}</button>`:''}
+      </li>`).join('') || '<li class="muted">Nadie con ese filtro</li>'}
+    </ul>
+    <h2>Picks</h2>
+    <ol class="small" style="padding-left:22px">${S.picks.slice().reverse().map(p=>`<li value="${p.pick_no+1}"><b>${esc(S.byId[p.player_id]?.name)}</b> (${p.price_m}M) → ${esc(member(p.user_id).team)}</li>`).join('') || '<span class="muted">Todavía ninguno</span>'}</ol>`;
+  $('#q').oninput = e => { S.q = e.target.value; const pos = e.target.selectionStart; renderDraft(); const i=$('#q'); i.focus(); i.setSelectionRange(pos,pos); };
+  $('#team').onchange = e => { S.team = e.target.value; renderDraft(); };
+  $('#rk').onchange = e => { S.onlyRookies = e.target.checked; renderDraft(); };
+}
+async function pick(pid){
+  const p = S.byId[pid];
+  if(S.armed !== pid){ S.armed = pid; renderDraft(); toast(`Pulsa "Confirmar" para fichar a ${p.name} por ${p.price}M`); return; }
+  S.armed = null;
+  const { error } = await sb.rpc('make_pick', { p_league:S.league.id, p_player:pid });
+  if(error) { renderDraft(); return fail(error); }
+  toast(p.name + ' fichado'); await refreshLeague(); render();
+}
+
+// ---------- Mi equipo ----------
+function renderTeam(){
+  const t = myTeamInfo();
+  $('#tab').innerHTML = `
+    <div class="stats">
+      <div class="stat"><b>${t.spent}M</b><span>gastado</span></div>
+      <div class="stat"><b>${t.left}M</b><span>libre</span></div>
+      <div class="stat"><b>${t.mine.length}/${S.league.roster_size}</b><span>jugadores</span></div>
+    </div>
+    <ul class="list card" style="padding:0 14px">
+      ${t.mine.map(p=>{const pl=S.byId[p.player_id]||{};return `<li><span class="price">${p.price_m}M</span><div class="grow"><div class="name">${esc(pl.name)}</div><div class="small muted">${pl.team}${pl.rookie?' · rookie':''}</div></div></li>`}).join('') || '<li class="muted">Aún no tienes jugadores. Se llenará en el draft.</li>'}
+    </ul>
+    <p class="small muted">Alineación semanal, capitán y banquillo llegan antes del primer partido (20 de octubre).</p>`;
+}
+
+// ---------- Predicciones ----------
+async function renderPred(){
+  $('#tab').innerHTML = '<p class="muted">Cargando…</p>';
+  const { data, error } = await sb.from('predictions').select('*').eq('league_id', S.league.id);
+  if(error) return fail(error);
+  const closeAt = S.league.predictions_close_at ? new Date(S.league.predictions_close_at) : null;
+  const closed = closeAt && new Date() >= closeAt;
+  const mine = Object.fromEntries(data.filter(d=>d.user_id===S.user.id).map(d=>[d.award,d]));
+  const opts = (rookie) => S.players.filter(p=>!rookie||p.rookie).map(p=>`<option value="${esc(p.name)} · ${p.team}">`).join('');
+  $('#tab').innerHTML = `
+    <p class="muted small">${closed ? 'Predicciones cerradas.' : 'Se cierran el ' + (closeAt ? closeAt.toLocaleString('es-ES',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}) : '—') + '. Cada acierto: 3 puntos de liga. Podéis repetir jugador.'}</p>
+    <datalist id="dl-all">${opts(false)}</datalist><datalist id="dl-rk">${opts(true)}</datalist>
+    <form id="fp" class="card">
+      ${AWARDS.map(([k,t])=>{
+        const cur = mine[k];
+        const val = k==='champion' ? (cur?.team||'') : (cur?.player_id ? (S.byId[cur.player_id]?.name+' · '+S.byId[cur.player_id]?.team) : '');
+        return `<label class="small muted">${t}</label>` + (k==='champion'
+          ? `<select name="${k}" ${closed?'disabled':''}><option value="">—</option>${TEAMS.map(x=>`<option ${val===x?'selected':''}>${x}</option>`).join('')}</select>`
+          : `<input name="${k}" list="${k==='roy'?'dl-rk':'dl-all'}" value="${esc(val)}" placeholder="Escribe y elige" ${closed?'disabled':''}>`);
+      }).join('')}
+      ${closed?'':'<button style="width:100%">Guardar predicciones</button>'}
+    </form>
+    ${closed ? `<h2>Lo que eligió cada uno</h2>${S.members.map(m=>`<div class="card"><div class="name">${esc(m.team)}</div>${AWARDS.map(([k,t])=>{const d=data.find(x=>x.user_id===m.id&&x.award===k);return `<div class="small"><span class="muted">${t}:</span> ${d?(k==='champion'?d.team:esc(S.byId[d.player_id]?.name)):'—'}</div>`}).join('')}</div>`).join('')}` : ''}`;
+  if(closed) return;
+  $('#fp').onsubmit = async e => {
+    e.preventDefault(); const f = new FormData(e.target); const rows = [];
+    for(const [k] of AWARDS){
+      const v = (f.get(k)||'').trim(); if(!v) continue;
+      if(k==='champion'){ rows.push({ league_id:S.league.id, user_id:S.user.id, award:k, team:v, player_id:null }); continue; }
+      const p = S.players.find(p => (p.name+' · '+p.team) === v);
+      if(!p) return fail(`No encuentro "${v}". Elígelo de la lista.`);
+      if(k==='roy' && !p.rookie) return fail(p.name+' no es rookie');
+      rows.push({ league_id:S.league.id, user_id:S.user.id, award:k, player_id:p.id, team:null, updated_at:new Date().toISOString() });
+    }
+    const { error } = await sb.from('predictions').upsert(rows, { onConflict:'league_id,user_id,award' });
+    if(error) return fail(error); toast('Predicciones guardadas');
+  };
+}
+
+// ---------- Liga ----------
+function renderLiga(){
+  const pending = S.league.draft_status === 'pendiente';
+  $('#tab').innerHTML = `
+    <h2>Participantes</h2>
+    <ul class="list card" style="padding:0 14px">${S.members.map(m=>`<li><span class="pill">${m.pos??'–'}</span><div class="grow"><div class="name">${esc(m.team)}</div><div class="small muted">${esc(m.name)}${m.id===S.league.commissioner_id?' · comisionado':''}</div></div><span class="small muted">${myTeamInfo(m.id).spent}M</span></li>`).join('')}</ul>
+    ${pending ? `<div class="card"><div class="small muted">Código para invitar</div><div class="between"><code>${esc(S.league.invite_code)}</code><button class="ghost sm" onclick="navigator.clipboard.writeText('${esc(S.league.invite_code)}');toast('Copiado')">Copiar</button></div></div>`:''}
+    <div class="card"><div class="small muted">Tu equipo</div><form id="ft" class="row"><input name="t" value="${esc(member(S.user.id).team)}" maxlength="30" style="margin:6px 0 0"><button class="sm" style="flex:0 0 auto;margin-top:6px">Guardar</button></form></div>
+    ${isComm() && pending ? `
+      <h2>Panel del comisionado</h2>
+      <div class="card">
+        <p class="small muted">Orden del draft (1 = primero en elegir; va en serpiente). Por reglas: orden inverso a la clasificación de la temporada pasada.</p>
+        ${S.members.map((m,i)=>`<label class="small muted">Pick ${i+1}</label><select name="o${i}" class="ord">${S.members.map(x=>`<option value="${x.id}" ${x.id===(S.members.find(y=>y.pos===i+1)?.id ?? S.members[i].id)?'selected':''}>${esc(x.team)} (${esc(x.name)})</option>`).join('')}</select>`).join('')}
+        <div class="row"><button class="ghost" onclick="saveOrder()">Guardar orden</button><button onclick="startDraft()">Empezar draft</button></div>
+      </div>` : ''}`;
+  $('#ft').onsubmit = async e => { e.preventDefault(); const t=new FormData(e.target).get('t').trim(); if(!t) return;
+    const { error } = await sb.from('league_members').update({ team_name:t }).eq('league_id', S.league.id).eq('user_id', S.user.id);
+    if(error) return fail(error); await refreshLeague(); render(); toast('Guardado'); };
+}
+async function saveOrder(){
+  const order = [...document.querySelectorAll('.ord')].map(s=>s.value);
+  if(new Set(order).size !== order.length) return fail('Cada participante debe aparecer una vez');
+  const { error } = await sb.rpc('set_draft_order', { p_league:S.league.id, p_order:order });
+  if(error) return fail(error); await refreshLeague(); render(); toast('Orden guardado');
+}
+async function startDraft(){
+  if(!S.armStart){ S.armStart = true; toast('Pulsa otra vez "Empezar draft" para confirmar. Ya no se podrá unir nadie más.'); setTimeout(()=>S.armStart=false, 5000); return; }
+  S.armStart = false;
+  const { error } = await sb.rpc('start_draft', { p_league:S.league.id });
+  if(error) return fail(error); await refreshLeague(); S.tab='draft'; render();
+}
+
+// ---------- utils & boot ----------
+function localGet(k){ try{ return localStorage.getItem('fnba_'+k) }catch{ return null } }
+function localSet(k,v){ try{ localStorage.setItem('fnba_'+k, v) }catch{} }
+
+sb.auth.onAuthStateChange((ev, session) => {
+  const u = session?.user || null;
+  if(u?.id === S.user?.id && S.booted) return;
+  S.booted = true;
+  S.user = u; S.league = null;
+  if(u) setTimeout(loadHome, 0); else { stopPoll(); viewAuth(); }
+});
+</script>
+</body>
+</html>
