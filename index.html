@@ -190,9 +190,10 @@ async function refreshLeague(){
 }
 function startPoll(){ stopPoll(); S.poll = setInterval(async ()=>{
   if(document.hidden || !S.league || S.league.draft_status === 'cerrado' && S.tab !== 'draft') return;
-  const before = (S.picks.length) + S.league.draft_status;
+  const sig = () => S.picks.length + S.league.draft_status + S.members.map(m=>m.pos).join(',') + S.members.length;
+  const before = sig();
   await refreshLeague();
-  if(before !== (S.picks.length + S.league.draft_status) && !isTyping()) render();
+  if(before !== sig() && !isTyping()) render();
 }, 4000); }
 function stopPoll(){ if(S.poll) clearInterval(S.poll); S.poll = null; }
 const isTyping = () => document.activeElement && ['INPUT','SELECT'].includes(document.activeElement.tagName);
@@ -227,7 +228,7 @@ function renderDraft(){
   const actingFor = myTurn ? S.user.id : (isComm() && onClock ? onClock : null);
   const actor = actingFor ? myTeamInfo(actingFor) : null;
   let head = '';
-  if(status === 'pendiente') head = `<div class="clock wait">El draft aún no ha empezado. ${isComm()?'Fija el orden y arráncalo desde la pestaña Liga.':'El comisionado lo abrirá.'}</div>`;
+  if(status === 'pendiente') { $('#tab').innerHTML = `<div class="clock wait">El draft aún no ha empezado. ${isComm()?'Sortea o fija el orden y arráncalo cuando estéis todos.':'El comisionado lo abrirá.'}</div>` + orderCard(); return; }
   else if(status === 'cerrado') head = `<div class="clock wait">Draft terminado. ¡A por la temporada!</div>`;
   else head = `<div class="clock ${myTurn?'':'wait'}">${myTurn ? '¡Te toca!' : 'Elige ' + esc(member(onClock).team)} · pick ${st.next_pick+1} de ${st.total_picks} · ronda ${Math.floor(st.next_pick/S.members.length)+1}</div>`;
 
@@ -341,13 +342,30 @@ function renderLiga(){
     ${isComm() && pending ? `
       <h2>Panel del comisionado</h2>
       <div class="card">
-        <p class="small muted">Orden del draft (1 = primero en elegir; va en serpiente). Por reglas: orden inverso a la clasificación de la temporada pasada.</p>
+        <p class="small muted">Orden del draft (1 = primero en elegir; va en serpiente). Sortéalo o, si la liga tiene historia, fíjalo a mano (p. ej. inverso a la clasificación de la temporada pasada).</p>
         ${S.members.map((m,i)=>`<label class="small muted">Pick ${i+1}</label><select name="o${i}" class="ord">${S.members.map(x=>`<option value="${x.id}" ${x.id===(S.members.find(y=>y.pos===i+1)?.id ?? S.members[i].id)?'selected':''}>${esc(x.team)} (${esc(x.name)})</option>`).join('')}</select>`).join('')}
-        <div class="row"><button class="ghost" onclick="saveOrder()">Guardar orden</button><button onclick="startDraft()">Empezar draft</button></div>
+        <div class="row"><button class="ghost" onclick="randomizeOrder()">Sortear</button><button class="ghost" onclick="saveOrder()">Guardar a mano</button><button onclick="startDraft()">Empezar draft</button></div>
       </div>` : ''}`;
   $('#ft').onsubmit = async e => { e.preventDefault(); const t=new FormData(e.target).get('t').trim(); if(!t) return;
     const { error } = await sb.from('league_members').update({ team_name:t }).eq('league_id', S.league.id).eq('user_id', S.user.id);
     if(error) return fail(error); await refreshLeague(); render(); toast('Guardado'); };
+}
+function orderCard(){
+  const set = S.members.every(m=>m.pos);
+  const how = S.league.draft_order_method === 'sorteo' ? 'Sorteado' : 'Fijado a mano';
+  const when = S.league.draft_order_set_at ? new Date(S.league.draft_order_set_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : '';
+  return `<h2>Orden del draft</h2>
+    <div class="card">
+      ${set ? `<ol style="margin:0;padding-left:22px">${S.members.map(m=>`<li style="padding:4px 0"><b>${esc(m.team)}</b> <span class="small muted">${esc(m.name)}</span></li>`).join('')}</ol>
+        <p class="small muted">${how} por el comisionado${when?' · '+when:''}. Va en serpiente: 1-2-3, 3-2-1…</p>`
+      : '<p class="muted">Todavía sin orden.</p>'}
+      ${isComm() ? `<div class="row" style="margin-top:10px"><button class="ghost" onclick="randomizeOrder()">${set?'Volver a sortear':'Sortear orden'}</button><button onclick="startDraft()" ${set?'':'disabled'}>Empezar draft</button></div>
+        <p class="small muted" style="margin-top:8px">Para fijarlo a mano: pestaña Liga › Panel del comisionado.</p>` : ''}
+    </div>`;
+}
+async function randomizeOrder(){
+  const { error } = await sb.rpc('randomize_draft_order', { p_league:S.league.id });
+  if(error) return fail(error); await refreshLeague(); render(); toast('Orden sorteado');
 }
 async function saveOrder(){
   const order = [...document.querySelectorAll('.ord')].map(s=>s.value);
