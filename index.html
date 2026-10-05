@@ -324,10 +324,14 @@ async function renderTeam(){
     ]);
     if(ro.error) return fail(ro.error);
     const week = w.data && w.data.week_no ? w.data : null;
-    let saved = null;
+    let saved = null, games = {};
     if(week){
-      const r = await sb.from('lineups').select('*').eq('league_id', S.league.id).eq('user_id', S.user.id).eq('week_no', week.week_no).maybeSingle();
+      const [r, g] = await Promise.all([
+        sb.from('lineups').select('*').eq('league_id', S.league.id).eq('user_id', S.user.id).eq('week_no', week.week_no).maybeSingle(),
+        sb.rpc('week_games', { p_season: SEASON, p_week: week.week_no })
+      ]);
       saved = r.data;
+      (g.data || []).forEach(x => games[x.team] = x);
     }
     const ids = ro.data.map(r=>r.player_id);
     const paid = Object.fromEntries(ro.data.map(r=>[r.player_id, r.price_paid_m]));
@@ -339,7 +343,7 @@ async function renderTeam(){
       const by = ids.slice().sort((x,y)=>fp(y)-fp(x));
       lu = { starters:by.slice(0,5), bench:by.slice(5), c:by[0], vc:by[1], saved:false, dirty:true };
     }
-    S.lu = { ...lu, league:S.league.id, week, paid, pending:null };
+    S.lu = { ...lu, league:S.league.id, week, paid, games, pending:null };
   }
   if(S.tab === 'equipo') drawTeam();
 }
@@ -348,19 +352,20 @@ function drawTeam(){
   const closes = L.week ? new Date(L.week.locks_at).toLocaleString('es-ES',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : null;
   const sub = id => { const pl = S.byId[id] || {}; return `${pl.team||''} · ${L.paid[id]}M${pl.fp!=null?' · '+Number(pl.fp).toFixed(1)+' pts/p':''}${pl.rookie?' · <span class="pill ok">rookie</span>':''}`; };
   const nm = id => esc(S.byId[id]?.name || 'Jugador');
+  const gm = id => { if(!L.week) return ''; const g = L.games[S.byId[id]?.team]; return `<div class="small" style="color:${g?'var(--text)':'var(--bad)'}">${g ? `<b>${g.n} ${g.n===1?'partido':'partidos'}</b> <span class="muted">${esc(g.rivals)}</span>` : 'Sin partidos esta jornada'}</div>`; };
+  const tot = L.starters.reduce((a,id)=>a+(L.games[S.byId[id]?.team]?.n||0),0);
   const ready = L.starters.length === 5 && L.c && L.vc && L.c !== L.vc;
-  const status = !L.week ? '' : L.dirty ? (L.saved ? 'Cambios sin guardar' : 'Propuesta automática · aún sin guardar') : 'Guardada';
+  const status = !L.week ? '' : L.dirty ? (L.saved ? 'Cambios sin guardar' : 'Propuesta sin guardar') : 'Guardada';
   $('#tab').innerHTML = `
-    <div class="card between" style="margin-top:12px">
-      <div><div class="name">${L.week ? 'Jornada ' + L.week.week_no : 'Temporada terminada'}</div>
-      <div class="small muted">${closes ? 'Se puede cambiar hasta ' + closes : ''}</div></div>
-      <span class="pill ${L.dirty?'':'ok'}">${status}</span>
+    <div class="card" style="margin-top:12px">
+      <div><div class="between"><div class="name">${L.week ? 'Jornada ' + L.week.week_no : 'Temporada terminada'}</div><span class="pill ${L.dirty?'':'ok'}" style="white-space:nowrap">${status}</span></div>
+      <div class="small muted">${closes ? 'Se puede cambiar hasta ' + closes + ' (1 h antes del primer partido). Hasta entonces nadie ve la tuya.' : ''}</div></div>
     </div>
-    <h2>Quinteto titular <span class="small muted">· puntúan al 100%</span></h2>
+    <h2>Quinteto titular <span class="small muted">· ${L.week ? tot + ' partidos entre los cinco' : 'puntúan al 100%'}</span></h2>
     ${L.pending ? `<p class="small"><b>¿A quién sustituye ${nm(L.pending)}?</b> <a href="#" onclick="luCancel();return false">Cancelar</a></p>` : ''}
     <ul class="list card" style="padding:0 14px">
       ${L.starters.map(id=>`<li>
-        <div class="grow"><div class="name">${nm(id)}</div><div class="small muted">${id===L.c?'<b style="color:var(--accent)">Capitán ×2</b> · ':id===L.vc?'<b style="color:var(--text)">Vicecapitán</b> · ':''}${sub(id)}</div></div>
+        <div class="grow"><div class="name">${nm(id)}</div><div class="small muted">${id===L.c?'<b style="color:var(--accent)">Capitán ×2</b> · ':id===L.vc?'<b style="color:var(--text)">Vicecapitán</b> · ':''}${sub(id)}</div>${gm(id)}</div>
         ${L.pending ? `<button class="sm" onclick="luSwap(${id})">Sale</button>` : `
           <button class="tg ${id===L.c?'on':''}" onclick="luCap(${id})" aria-label="Hacer capitán">C</button>
           <button class="tg ${id===L.vc?'on':''}" onclick="luVice(${id})" aria-label="Hacer vicecapitán">VC</button>
@@ -373,7 +378,7 @@ function drawTeam(){
     <ul class="list card" style="padding:0 14px">
       ${L.bench.map((id,i)=>`<li>
         <span class="pill">${i+6}º</span>
-        <div class="grow"><div class="name">${nm(id)}</div><div class="small muted">${sub(id)}</div></div>
+        <div class="grow"><div class="name">${nm(id)}</div><div class="small muted">${sub(id)}</div>${gm(id)}</div>
         <button class="tg" onclick="luMove(${id},-1)" ${i===0?'disabled':''} aria-label="Subir prioridad">▲</button>
         <button class="tg" onclick="luMove(${id},1)" ${i===L.bench.length-1?'disabled':''} aria-label="Bajar prioridad">▼</button>
         <button class="tg" onclick="luStart(${id})" aria-label="Hacer titular">↑</button>
