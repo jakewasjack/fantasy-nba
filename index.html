@@ -25,6 +25,8 @@ input,select{width:100%;background:var(--surface2);border:1px solid var(--line);
 button{background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:11px 14px;font-weight:600;cursor:pointer}
 button.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
 button.sm{padding:6px 10px;font-size:13px}
+button.tg{background:var(--surface2);color:var(--text);border:1px solid var(--line);padding:8px 0;min-width:38px;font-size:13px}
+button.tg.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 button:disabled{opacity:.35;cursor:not-allowed}
 .row{display:flex;gap:8px;align-items:center}
 .row>*{flex:1}
@@ -157,7 +159,7 @@ async function openLeague(id){
   localSet('league', id);
   const { data:l, error } = await sb.from('leagues').select('*').eq('id', id).single();
   if(error) return fail(error);
-  S.league = l;
+  S.league = l; S.lu = null;
   if(!S.players) await loadPlayers();
   await refreshLeague();
   S.tab = l.draft_status === 'cerrado' ? 'equipo' : 'draft';
@@ -299,18 +301,106 @@ async function pick(pid){
 }
 
 // ---------- Mi equipo ----------
-function renderTeam(){
+async function renderTeam(){
   const t = myTeamInfo();
+  if(S.league.draft_status !== 'cerrado'){
+    $('#tab').innerHTML = `
+      <div class="stats">
+        <div class="stat"><b>${t.spent}M</b><span>gastado</span></div>
+        <div class="stat"><b>${t.left}M</b><span>libre</span></div>
+        <div class="stat"><b>${t.mine.length}/${S.league.roster_size}</b><span>jugadores</span></div>
+      </div>
+      <ul class="list card" style="padding:0 14px">
+        ${t.mine.map(p=>{const pl=S.byId[p.player_id]||{};return `<li><span class="price">${p.price_m}M</span><div class="grow"><div class="name">${esc(pl.name)}</div><div class="small muted">${pl.team}${pl.rookie?' · rookie':''}</div></div></li>`}).join('') || '<li class="muted">Aún no tienes jugadores. Se llenará en el draft.</li>'}
+      </ul>
+      <p class="small muted">Podrás montar tu quinteto, capitán y banquillo en cuanto termine el draft.</p>`;
+    return;
+  }
+  if(!S.lu || S.lu.league !== S.league.id){
+    $('#tab').innerHTML = '<p class="muted">Cargando…</p>';
+    const [w, ro] = await Promise.all([
+      sb.rpc('open_week', { p_season: SEASON }),
+      sb.from('rosters').select('player_id,price_paid_m').eq('league_id', S.league.id).eq('user_id', S.user.id)
+    ]);
+    if(ro.error) return fail(ro.error);
+    const week = w.data && w.data.week_no ? w.data : null;
+    let saved = null;
+    if(week){
+      const r = await sb.from('lineups').select('*').eq('league_id', S.league.id).eq('user_id', S.user.id).eq('week_no', week.week_no).maybeSingle();
+      saved = r.data;
+    }
+    const ids = ro.data.map(r=>r.player_id);
+    const paid = Object.fromEntries(ro.data.map(r=>[r.player_id, r.price_paid_m]));
+    const fp = id => S.byId[id]?.fp ?? -1;
+    let lu;
+    if(saved && saved.starters.length + saved.bench_order.length === ids.length && [...saved.starters, ...saved.bench_order].every(id=>ids.includes(id)))
+      lu = { starters:[...saved.starters], bench:[...saved.bench_order], c:saved.captain_id, vc:saved.vice_captain_id, saved:true, dirty:false };
+    else {
+      const by = ids.slice().sort((x,y)=>fp(y)-fp(x));
+      lu = { starters:by.slice(0,5), bench:by.slice(5), c:by[0], vc:by[1], saved:false, dirty:true };
+    }
+    S.lu = { ...lu, league:S.league.id, week, paid, pending:null };
+  }
+  if(S.tab === 'equipo') drawTeam();
+}
+function drawTeam(){
+  const L = S.lu, t = myTeamInfo();
+  const closes = L.week ? new Date(L.week.locks_at).toLocaleString('es-ES',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : null;
+  const sub = id => { const pl = S.byId[id] || {}; return `${pl.team||''} · ${L.paid[id]}M${pl.fp!=null?' · '+Number(pl.fp).toFixed(1)+' pts/p':''}${pl.rookie?' · <span class="pill ok">rookie</span>':''}`; };
+  const nm = id => esc(S.byId[id]?.name || 'Jugador');
+  const ready = L.starters.length === 5 && L.c && L.vc && L.c !== L.vc;
+  const status = !L.week ? '' : L.dirty ? (L.saved ? 'Cambios sin guardar' : 'Propuesta automática · aún sin guardar') : 'Guardada';
   $('#tab').innerHTML = `
-    <div class="stats">
-      <div class="stat"><b>${t.spent}M</b><span>gastado</span></div>
-      <div class="stat"><b>${t.left}M</b><span>libre</span></div>
-      <div class="stat"><b>${t.mine.length}/${S.league.roster_size}</b><span>jugadores</span></div>
+    <div class="card between" style="margin-top:12px">
+      <div><div class="name">${L.week ? 'Jornada ' + L.week.week_no : 'Temporada terminada'}</div>
+      <div class="small muted">${closes ? 'Se puede cambiar hasta ' + closes : ''}</div></div>
+      <span class="pill ${L.dirty?'':'ok'}">${status}</span>
     </div>
+    <h2>Quinteto titular <span class="small muted">· puntúan al 100%</span></h2>
+    ${L.pending ? `<p class="small"><b>¿A quién sustituye ${nm(L.pending)}?</b> <a href="#" onclick="luCancel();return false">Cancelar</a></p>` : ''}
     <ul class="list card" style="padding:0 14px">
-      ${t.mine.map(p=>{const pl=S.byId[p.player_id]||{};return `<li><span class="price">${p.price_m}M</span><div class="grow"><div class="name">${esc(pl.name)}</div><div class="small muted">${pl.team}${pl.rookie?' · rookie':''}</div></div></li>`}).join('') || '<li class="muted">Aún no tienes jugadores. Se llenará en el draft.</li>'}
+      ${L.starters.map(id=>`<li>
+        <div class="grow"><div class="name">${nm(id)}</div><div class="small muted">${id===L.c?'<b style="color:var(--accent)">Capitán ×2</b> · ':id===L.vc?'<b style="color:var(--text)">Vicecapitán</b> · ':''}${sub(id)}</div></div>
+        ${L.pending ? `<button class="sm" onclick="luSwap(${id})">Sale</button>` : `
+          <button class="tg ${id===L.c?'on':''}" onclick="luCap(${id})" aria-label="Hacer capitán">C</button>
+          <button class="tg ${id===L.vc?'on':''}" onclick="luVice(${id})" aria-label="Hacer vicecapitán">VC</button>
+          <button class="tg" onclick="luBench(${id})" aria-label="Mandar al banquillo">↓</button>`}
+      </li>`).join('')}
+      ${L.starters.length < 5 ? `<li class="muted">Te ${5-L.starters.length===1?'falta 1 titular':'faltan '+(5-L.starters.length)+' titulares'}: súbelo${5-L.starters.length===1?'':'s'} desde el banquillo.</li>` : ''}
     </ul>
-    <p class="small muted">Alineación semanal, capitán y banquillo llegan antes del primer partido (20 de octubre).</p>`;
+    <p class="small muted">El capitán puntúa doble. Si no juega, el doble pasa al vicecapitán.</p>
+    <h2>Banquillo <span class="small muted">· entra por este orden si un titular no juega</span></h2>
+    <ul class="list card" style="padding:0 14px">
+      ${L.bench.map((id,i)=>`<li>
+        <span class="pill">${i+6}º</span>
+        <div class="grow"><div class="name">${nm(id)}</div><div class="small muted">${sub(id)}</div></div>
+        <button class="tg" onclick="luMove(${id},-1)" ${i===0?'disabled':''} aria-label="Subir prioridad">▲</button>
+        <button class="tg" onclick="luMove(${id},1)" ${i===L.bench.length-1?'disabled':''} aria-label="Bajar prioridad">▼</button>
+        <button class="tg" onclick="luStart(${id})" aria-label="Hacer titular">↑</button>
+      </li>`).join('') || '<li class="muted">Banquillo vacío</li>'}
+    </ul>
+    ${L.week ? `<button style="width:100%;margin-top:8px" onclick="luSave()" ${ready && L.dirty ? '' : 'disabled'}>${L.dirty ? 'Guardar alineación' : 'Alineación guardada'}</button>
+      ${ready ? '' : '<p class="small muted">Para guardar necesitas 5 titulares, capitán y vicecapitán.</p>'}` : ''}
+    <p class="small muted" style="margin-top:14px">Presupuesto: ${t.spent}M gastados · ${t.left}M libres.</p>`;
+}
+function luTouch(){ S.lu.dirty = true; drawTeam(); }
+function luCap(id){ const L=S.lu; if(L.vc===id) L.vc = L.c; L.c = id; luTouch(); }
+function luVice(id){ const L=S.lu; if(L.c===id) L.c = L.vc; L.vc = id; luTouch(); }
+function luBench(id){ const L=S.lu; L.starters = L.starters.filter(x=>x!==id); L.bench.unshift(id); if(L.c===id) L.c=null; if(L.vc===id) L.vc=null; luTouch(); }
+function luStart(id){ const L=S.lu;
+  if(L.starters.length < 5){ L.bench = L.bench.filter(x=>x!==id); L.starters.push(id); return luTouch(); }
+  L.pending = id; drawTeam(); }
+function luSwap(out){ const L=S.lu, inn=L.pending; if(!inn) return;
+  const bi = L.bench.indexOf(inn), si = L.starters.indexOf(out);
+  L.starters[si] = inn; L.bench[bi] = out;
+  if(L.c===out) L.c = inn; if(L.vc===out) L.vc = inn;
+  L.pending = null; luTouch(); }
+function luCancel(){ S.lu.pending = null; drawTeam(); }
+function luMove(id, d){ const b=S.lu.bench, i=b.indexOf(id), j=i+d; if(j<0||j>=b.length) return; [b[i],b[j]]=[b[j],b[i]]; luTouch(); }
+async function luSave(){ const L=S.lu;
+  const { data, error } = await sb.rpc('save_lineup', { p_league:S.league.id, p_starters:L.starters, p_bench:L.bench, p_captain:L.c, p_vice:L.vc });
+  if(error) return fail(error);
+  L.saved = true; L.dirty = false; drawTeam(); toast('Alineación guardada para la jornada ' + data);
 }
 
 // ---------- Predicciones ----------
