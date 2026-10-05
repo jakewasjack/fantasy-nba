@@ -72,7 +72,7 @@ const AWARDS = [
 ];
 const TEAMS = 'ATL BOS BKN CHA CHI CLE DAL DEN DET GSW HOU IND LAC LAL MEM MIA MIL MIN NOP NYK OKC ORL PHI PHX POR SAC SAS TOR UTA WAS'.split(' ');
 
-const S = { user:null, profile:null, leagues:[], league:null, tab:'draft', players:null, members:[], picks:[], state:null, poll:null, q:'', team:'', onlyRookies:false };
+const S = { user:null, profile:null, leagues:[], league:null, tab:'draft', players:null, members:[], picks:[], state:null, poll:null, q:'', team:'', onlyRookies:false, sort:'valor', affordable:false };
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -173,6 +173,7 @@ async function loadPlayers(){
   S.players = all.map(p => ({ id:p.id, name:p.name, team:p.team, rookie:p.is_rookie, pick:p.draft_pick,
     price:p.player_prices?.[0]?.price_m ?? 1, fp:p.player_prices?.[0]?.pts_per_game }))
     .sort((a,b)=> b.price-a.price || (b.fp??0)-(a.fp??0) || a.name.localeCompare(b.name));
+  S.players.filter(p=>p.fp!=null).sort((a,b)=>b.fp-a.fp).forEach((p,i)=>p.rank=i+1);
   S.byId = Object.fromEntries(S.players.map(p=>[p.id,p]));
 }
 async function refreshLeague(){
@@ -233,7 +234,17 @@ function renderDraft(){
   else head = `<div class="clock ${myTurn?'':'wait'}">${myTurn ? '¡Te toca!' : 'Elige ' + esc(member(onClock).team)} · pick ${st.next_pick+1} de ${st.total_picks} · ronda ${Math.floor(st.next_pick/S.members.length)+1}</div>`;
 
   const q = S.q.toLowerCase();
-  const avail = S.players.filter(p => !taken.has(p.id) && (!q || p.name.toLowerCase().includes(q)) && (!S.team || p.team===S.team) && (!S.onlyRookies || p.rookie)).slice(0, 80);
+  // De quién son los números que se ven: de quien elige ahora (si elijo por otro) o míos
+  const who = actor || me; const whoName = actingFor && !myTurn ? member(actingFor).team : null;
+  // Máximo que se puede pagar por un jugador ahora, reservando 1M por cada hueco restante
+  const maxPrice = who.slots > 0 ? who.left - (who.slots - 1) : 0;
+  const sorters = {
+    valor: (a,b)=> b.price-a.price || (b.fp??-1)-(a.fp??-1),
+    media: (a,b)=> (b.fp??-1)-(a.fp??-1) || b.price-a.price,
+    barato: (a,b)=> a.price-b.price || (b.fp??-1)-(a.fp??-1)
+  };
+  const all = S.players.filter(p => !taken.has(p.id) && (!q || p.name.toLowerCase().includes(q)) && (!S.team || p.team===S.team) && (!S.onlyRookies || p.rookie) && (!S.affordable || p.price <= maxPrice)).sort(sorters[S.sort] || sorters.valor);
+  const avail = all.slice(0, 100);
   const canPick = p => {
     if(!actor || status!=='en_curso') return false;
     const leftAfter = actor.slots - 1;
@@ -243,22 +254,30 @@ function renderDraft(){
   };
   $('#tab').innerHTML = `
     ${head}
+    ${whoName ? `<p class="small" style="margin:10px 0 0"><b>Eliges por ${esc(whoName)}</b> <span class="muted">· estos son sus números, no los tuyos</span></p>`:''}
     <div class="stats">
-      <div class="stat"><b>${me.left}M</b><span>presupuesto</span></div>
-      <div class="stat"><b>${me.slots}</b><span>huecos</span></div>
-      <div class="stat"><b>${me.hasRookie?'✓':'—'}</b><span>rookie</span></div>
+      <div class="stat"><b>${who.left}M</b><span>${whoName?'su presupuesto':'presupuesto'}</span></div>
+      <div class="stat"><b>${who.slots}</b><span>huecos</span></div>
+      <div class="stat"><b>${who.hasRookie?'✓':'—'}</b><span>rookie</span></div>
     </div>
-    ${actingFor && !myTurn ? `<p class="small muted">Como comisionado puedes elegir por ${esc(member(actingFor).team)} si no está conectado.</p>`:''}
+    <p class="small muted" style="margin:0 0 10px">${S.members.map(m=>{const t=myTeamInfo(m.id);return `${esc(m.team)} <b style="color:var(--text)">${t.left}M</b>`}).join(' · ')}</p>
     <div class="row">
       <input id="q" placeholder="Buscar jugador" value="${esc(S.q)}">
       <select id="team" style="max-width:110px"><option value="">Equipo</option>${TEAMS.map(t=>`<option ${S.team===t?'selected':''}>${t}</option>`).join('')}</select>
     </div>
-    <label class="small muted"><input type="checkbox" id="rk" ${S.onlyRookies?'checked':''} style="width:auto;margin:0 6px 0 0">Solo rookies</label>
+    <div class="row">
+      <select id="sort" aria-label="Ordenar"><option value="valor" ${S.sort==='valor'?'selected':''}>Orden: valor (caros primero)</option><option value="media" ${S.sort==='media'?'selected':''}>Orden: media de puntos</option><option value="barato" ${S.sort==='barato'?'selected':''}>Orden: baratos primero</option></select>
+    </div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px">
+      <label class="small muted"><input type="checkbox" id="af" ${S.affordable?'checked':''} style="width:auto;margin:0 6px 0 0">Solo los que ${whoName?'puede':'puedo'} pagar (≤ ${Math.max(maxPrice,0)}M)</label>
+      <label class="small muted"><input type="checkbox" id="rk" ${S.onlyRookies?'checked':''} style="width:auto;margin:0 6px 0 0">Solo rookies</label>
+    </div>
+    <p class="small muted" style="margin:0 0 4px">${all.length} jugadores${all.length>100?' · se muestran 100, afina con los filtros':''}</p>
     <ul class="list card" style="padding:0 14px">
       ${avail.map(p=>`<li>
         <span class="price">${p.price}M</span>
         <div class="grow"><div class="name">${esc(p.name)}</div>
-          <div class="small muted">${p.team}${p.rookie?' · <span class="pill ok">rookie'+(p.pick?' #'+p.pick:'')+'</span>':''}${p.fp?' · '+Number(p.fp).toFixed(1)+' pts/p':''}</div></div>
+          <div class="small muted">${p.team}${p.rookie?' · <span class="pill ok">rookie'+(p.pick?' #'+p.pick:'')+'</span>':''}${p.fp?' · '+Number(p.fp).toFixed(1)+' pts/p'+(p.rank?' <span class="muted">(#'+p.rank+')</span>':''):''}</div></div>
         ${status==='en_curso'?`<button class="sm" ${canPick(p)?'':'disabled'} onclick="pick(${p.id})">${S.armed===p.id?'Confirmar':'Elegir'}</button>`:''}
       </li>`).join('') || '<li class="muted">Nadie con ese filtro</li>'}
     </ul>
@@ -267,6 +286,8 @@ function renderDraft(){
   $('#q').oninput = e => { S.q = e.target.value; const pos = e.target.selectionStart; renderDraft(); const i=$('#q'); i.focus(); i.setSelectionRange(pos,pos); };
   $('#team').onchange = e => { S.team = e.target.value; renderDraft(); };
   $('#rk').onchange = e => { S.onlyRookies = e.target.checked; renderDraft(); };
+  $('#af').onchange = e => { S.affordable = e.target.checked; renderDraft(); };
+  $('#sort').onchange = e => { S.sort = e.target.value; renderDraft(); };
 }
 async function pick(pid){
   const p = S.byId[pid];
@@ -320,14 +341,15 @@ async function renderPred(){
     e.preventDefault(); const f = new FormData(e.target); const rows = [];
     for(const [k] of AWARDS){
       const v = (f.get(k)||'').trim(); if(!v) continue;
-      if(k==='champion'){ rows.push({ league_id:S.league.id, user_id:S.user.id, award:k, team:v, player_id:null }); continue; }
+      if(k==='champion'){ rows.push({ league_id:S.league.id, user_id:S.user.id, award:k, team:v, player_id:null, updated_at:new Date().toISOString() }); continue; }
       const p = S.players.find(p => (p.name+' · '+p.team) === v);
       if(!p) return fail(`No encuentro "${v}". Elígelo de la lista.`);
       if(k==='roy' && !p.rookie) return fail(p.name+' no es rookie');
       rows.push({ league_id:S.league.id, user_id:S.user.id, award:k, player_id:p.id, team:null, updated_at:new Date().toISOString() });
     }
+    if(!rows.length) return fail('Elige al menos una predicción');
     const { error } = await sb.from('predictions').upsert(rows, { onConflict:'league_id,user_id,award' });
-    if(error) return fail(error); toast('Predicciones guardadas');
+    if(error) return fail(error); toast('Predicciones guardadas (' + rows.length + ' de 6)');
   };
 }
 
