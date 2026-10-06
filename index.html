@@ -581,17 +581,18 @@ async function drawRoom(keepDraft){
   const open = parts.length > 1;
   const draft = keepDraft ? ($('#rmsg')?.value || '') : '';
   $('#tab').innerHTML = `
-    <p style="margin-top:12px"><a href="#" onclick="closeRoom();return false">← Mercado</a></p>
-    <div class="card">
-      <div class="small muted">En disputa · jornada ${T.week.week_no}</div>
-      <div class="name" style="font-size:18px">${pname(pid)} · ${S.byId[pid]?.price ?? 1}M</div>
-      <ul class="list" style="margin-top:6px">${parts.map((t,i)=>`<li style="padding:6px 0"><span class="pill">${i+1}º</span><div class="grow"><b>${esc(member(t.user_id).team)}</b> <span class="small muted">soltaría a ${pname(t.player_out)}${i===0?' · lo pidió primero':''}</span></div></li>`).join('') || '<li class="muted">Ya no hay nadie pidiéndolo.</li>'}</ul>
+    <div style="position:sticky;top:46px;z-index:4;background:var(--bg);padding:10px 0 8px;border-bottom:1px solid var(--line)">
+      <div class="between"><a href="#" onclick="closeRoom();return false" class="small">← Mercado</a><span class="small muted">${open ? 'Cierra ' + fmtLock(T.week) : 'Resuelta'}</span></div>
+      <div class="name" style="font-size:18px;margin-top:4px">${pname(pid)} · ${S.byId[pid]?.price ?? 1}M</div>
+      ${parts.map((t,i)=>`<div class="small" style="margin-top:2px"><span class="pill">${i+1}º</span> <b>${esc(member(t.user_id).team)}</b> <span class="muted">suelta a ${pname(t.player_out)}${i===0?' · lo pidió primero':''}</span></div>`).join('') || '<div class="small muted">Ya no hay nadie pidiéndolo.</div>'}
     </div>
-    <p class="small muted">${open ? `Tenéis hasta ${fmtLock(T.week)}. Si nadie se retira: jugador congelado, −3M a cada uno y reservado la jornada siguiente para quien lo pidió primero.` : 'La disputa se ha resuelto: solo queda una petición y se confirmará al cierre.'}</p>
+    <p class="small muted">${open ? `Si nadie se retira antes del cierre: jugador congelado, −3M a cada uno y reservado la jornada siguiente para quien lo pidió primero.` : 'La disputa se ha resuelto: solo queda una petición y se confirmará al cierre.'}</p>
     <div id="rlist">${(msgs||[]).map(m=>`<div class="card" style="margin:6px 0;padding:10px 12px;${m.user_id===me?'border-color:var(--accent)':''}"><div class="small muted">${esc(member(m.user_id).team)} · ${new Date(m.created_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div><div>${esc(m.body)}</div></div>`).join('') || '<p class="muted small">Nadie ha dicho nada todavía.</p>'}</div>
     ${!mine ? '<p class="small muted">Estás mirando: solo escriben los implicados.</p>' : ''}
-    ${mine && open ? `<form id="rform" class="row" style="margin-top:8px"><input id="rmsg" maxlength="500" placeholder="Escribe tu propuesta" value="${esc(draft)}" style="margin:0"><button class="sm" style="flex:0 0 auto">Enviar</button></form>
-      <button class="ghost" style="width:100%;margin-top:10px" onclick="mkCancel('${mine.id}')">Me retiro (me quedo con ${pname(mine.player_out)})</button>` : ''}`;
+    ${mine && open ? `<div style="position:sticky;bottom:0;background:var(--bg);padding:8px 0 calc(8px + env(safe-area-inset-bottom));border-top:1px solid var(--line);margin-top:8px">
+      <form id="rform" class="row"><input id="rmsg" maxlength="500" placeholder="Escribe tu propuesta" value="${esc(draft)}" style="margin:0"><button class="sm" style="flex:0 0 auto">Enviar</button></form>
+      <button class="ghost sm" style="width:100%;margin-top:8px" onclick="mkCancel('${mine.id}')">Me retiro (me quedo con ${pname(mine.player_out)})</button></div>` : ''}`;
+  if(!keepDraft) window.scrollTo(0, document.body.scrollHeight);
   const f = $('#rform'); if(f) f.onsubmit = async e => { e.preventDefault(); const v = $('#rmsg').value.trim(); if(!v) return;
     const { error } = await sb.rpc('post_transfer_message', { p_league:S.league.id, p_player:pid, p_body:v });
     if(error) return fail(error); drawRoom(); };
