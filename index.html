@@ -487,10 +487,11 @@ function drawMarket(){
   const stLabel = { pending:'Pendiente', negotiating:'En negociación', confirmed:'Confirmado', frozen:'Congelado · −3M', withdrawn:'Retirado' };
   const mineAll = T.reqs.filter(t => t.user_id === me && t.status !== 'withdrawn');
   const chooser = M.inn && !M.out;
+  const rooms = Object.entries(reqBy).filter(([pid,ts]) => ts.length > 1 && !ts.some(t => t.user_id === me)).map(([pid,ts]) => [Number(pid), ts]);
   $('#tab').innerHTML = `
     <div class="card" style="margin-top:12px">
       <div class="between"><div class="name">Mercado · jornada ${T.week.week_no}</div><span class="pill">Saldo ${T.bal}M</span></div>
-      <div class="small muted">Los cambios entran en la jornada ${T.week.week_no} y se confirman al cierre: ${fmtLock(T.week)}. Si otro pide al mismo jugador, toca negociar.</div>
+      <div class="small muted">Los cambios entran en la jornada ${T.week.week_no} y se confirman al cierre: ${fmtLock(T.week)}. Nadie ve lo que pides, salvo que otro equipo quiera al mismo jugador: entonces se abre la mesa de negociación.</div>
     </div>
     ${mineAll.length ? `<h2>Mis fichajes</h2><ul class="list card" style="padding:0 14px">${mineAll.map(t=>`<li>
         <div class="grow"><div class="name">Entra ${pname(t.player_in)}</div><div class="small muted">Sale ${pname(t.player_out)} · ${price(t.player_in)}M</div></div>
@@ -498,6 +499,9 @@ function drawMarket(){
         ${t.status==='negotiating' ? `<button class="sm" onclick="openRoom(${t.player_in})">Sala</button>` : ''}
         ${LIVE.includes(t.status) ? `<button class="sm ghost" onclick="mkCancel('${t.id}')">Retirar</button>` : ''}
       </li>`).join('')}</ul>` : ''}
+    ${rooms.length ? `<h2>Negociaciones abiertas en la liga</h2><ul class="list card" style="padding:0 14px">${rooms.map(([pid,ts])=>`<li>
+        <div class="grow"><div class="name">${pname(pid)}</div><div class="small muted">${ts.map(t=>esc(member(t.user_id).team)).join(' vs ')}</div></div>
+        <button class="sm ghost" onclick="openRoom(${pid})">Ver la mesa</button></li>`).join('')}</ul>` : ''}
     ${chooser ? `
       <h2>¿Quién sale por ${pname(M.inn)}? <span class="small muted">· cuesta ${price(M.inn)}M</span></h2>
       <ul class="list card" style="padding:0 14px">${canOut.slice().sort((a,b)=>(S.byId[a]?.fp??-1)-(S.byId[b]?.fp??-1)).map(id=>{ const ok = T.bal + (T.paid[id]||0) - price(M.inn) >= 0; return `<li>
@@ -523,7 +527,7 @@ function drawMarket(){
         <span class="price">${p.price}M</span>
         <div class="grow"><div class="name">${esc(p.name)}</div>
           <div class="small muted">${p.pos ? '<b style="color:var(--text)">'+p.pos+'</b> · ' : ''}${p.team}${p.fp!=null?' · '+Number(p.fp).toFixed(1)+' pts/p':''}${p.rookie?' · <span class="pill ok">rookie</span>':''} · ${g?g.n+' part.':'sin partidos'}</div>
-          ${others.length ? `<div class="small" style="color:var(--accent)">Pedido por ${others.map(t=>esc(member(t.user_id).team)).join(', ')}: si lo pides, vais a negociación</div>` : ''}
+          ${others.length ? `<div class="small" style="color:var(--accent)">En disputa entre ${others.map(t=>esc(member(t.user_id).team)).join(' y ')} · <a href="#" onclick="openRoom(${p.id});return false" style="color:inherit">ver la mesa</a></div>` : ''}
           ${rsv ? `<div class="small" style="color:${blocked?'var(--bad)':'var(--ok)'}">${blocked ? 'Reservado esta jornada para ' + esc(member(rsv).team) : 'Reservado para ti esta jornada'}</div>` : ''}</div>
         <button class="sm" ${blocked || p.price > maxPrice ? 'disabled' : ''} onclick="mkPick(${p.id})">${M.out && M.armed===p.id ? 'Confirmar' : 'Fichar'}</button>
       </li>`}).join('') || '<li class="muted">Nadie con ese filtro</li>'}
@@ -583,6 +587,7 @@ async function drawRoom(keepDraft){
     </div>
     <p class="small muted">${open ? `Tenéis hasta ${fmtLock(T.week)}. Si nadie se retira: jugador congelado, −3M a cada uno y reservado la jornada siguiente para quien lo pidió primero.` : 'La disputa se ha resuelto: solo queda una petición y se confirmará al cierre.'}</p>
     <div id="rlist">${(msgs||[]).map(m=>`<div class="card" style="margin:6px 0;padding:10px 12px;${m.user_id===me?'border-color:var(--accent)':''}"><div class="small muted">${esc(member(m.user_id).team)} · ${new Date(m.created_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div><div>${esc(m.body)}</div></div>`).join('') || '<p class="muted small">Nadie ha dicho nada todavía.</p>'}</div>
+    ${!mine ? '<p class="small muted">Estás mirando: solo escriben los implicados.</p>' : ''}
     ${mine && open ? `<form id="rform" class="row" style="margin-top:8px"><input id="rmsg" maxlength="500" placeholder="Escribe tu propuesta" value="${esc(draft)}" style="margin:0"><button class="sm" style="flex:0 0 auto">Enviar</button></form>
       <button class="ghost" style="width:100%;margin-top:10px" onclick="mkCancel('${mine.id}')">Me retiro (me quedo con ${pname(mine.player_out)})</button>` : ''}`;
   const f = $('#rform'); if(f) f.onsubmit = async e => { e.preventDefault(); const v = $('#rmsg').value.trim(); if(!v) return;
