@@ -27,6 +27,7 @@ button.ghost{background:transparent;color:var(--text);border:1px solid var(--lin
 button.sm{padding:6px 10px;font-size:13px}
 button.tg{background:var(--surface2);color:var(--text);border:1px solid var(--line);padding:8px 0;min-width:38px;font-size:13px}
 button.tg.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.lnk{background:none;color:var(--text);padding:0;border-radius:0;text-align:left;display:block;max-width:100%;font-size:15px;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:4px}
 button:disabled{opacity:.35;cursor:not-allowed}
 .row{display:flex;gap:8px;align-items:center}
 .row>*{flex:1}
@@ -159,7 +160,8 @@ async function openLeague(id){
   localSet('league', id);
   const { data:l, error } = await sb.from('leagues').select('*').eq('id', id).single();
   if(error) return fail(error);
-  S.league = l; S.lu = null;
+  S.league = l; S.lu = null; S.td = null; S.room = null; S.mk = null;
+  sb.rpc('settle_due').then(()=>{}, ()=>{});
   if(!S.players) await loadPlayers();
   await refreshLeague();
   S.tab = l.draft_status === 'cerrado' ? 'equipo' : 'draft';
@@ -168,11 +170,11 @@ async function openLeague(id){
 async function loadPlayers(){
   const all = []; let from = 0;
   while(true){
-    const { data, error } = await sb.from('players').select('id,name,team,is_rookie,draft_pick,player_prices(price_m,pts_per_game)').eq('active', true).eq('player_prices.season', SEASON).range(from, from+999);
+    const { data, error } = await sb.from('players').select('id,name,team,position,is_rookie,draft_pick,player_prices(price_m,pts_per_game)').eq('active', true).eq('player_prices.season', SEASON).range(from, from+999);
     if(error) { fail(error); break; }
     all.push(...data); if(data.length < 1000) break; from += 1000;
   }
-  S.players = all.map(p => ({ id:p.id, name:p.name, team:p.team, rookie:p.is_rookie, pick:p.draft_pick,
+  S.players = all.map(p => ({ id:p.id, name:p.name, team:p.team, pos:p.position, rookie:p.is_rookie, pick:p.draft_pick,
     price:p.player_prices?.[0]?.price_m ?? 1, fp:p.player_prices?.[0]?.pts_per_game }))
     .sort((a,b)=> b.price-a.price || (b.fp??0)-(a.fp??0) || a.name.localeCompare(b.name));
   S.players.filter(p=>p.fp!=null).sort((a,b)=>b.fp-a.fp).forEach((p,i)=>p.rank=i+1);
@@ -211,7 +213,8 @@ function myTeamInfo(uid = S.user.id){
 }
 
 function render(){
-  const tabs = [['draft','Draft'],['equipo','Mi equipo'],['pred','Predicciones'],['liga','Liga']];
+  const tabs = [['draft','Draft'],['equipo','Mi equipo'],['mercado','Mercado'],['pred','Predicciones'],['liga','Liga']];
+  if(S.tab !== 'mercado' || !S.room) stopRoomPoll();
   $('#app').innerHTML = `
     <div class="between" style="margin-top:14px">
       <div><div class="small muted">${esc(S.league.name)}</div><div class="name" style="font-size:18px">${esc(member(S.user.id).team)}</div></div>
@@ -219,7 +222,7 @@ function render(){
     </div>
     <nav class="tabs">${tabs.map(([k,t])=>`<button class="${S.tab===k?'on':''}" onclick="S.tab='${k}';render()">${t}</button>`).join('')}</nav>
     <main id="tab"></main>`;
-  ({ draft:renderDraft, equipo:renderTeam, pred:renderPred, liga:renderLiga })[S.tab]();
+  ({ draft:renderDraft, equipo:renderTeam, mercado:renderMarket, pred:renderPred, liga:renderLiga })[S.tab]();
 }
 
 // ---------- Draft ----------
@@ -279,7 +282,7 @@ function renderDraft(){
       ${avail.map(p=>`<li>
         <span class="price">${p.price}M</span>
         <div class="grow"><div class="name">${esc(p.name)}</div>
-          <div class="small muted">${p.team}${p.rookie?' · <span class="pill ok">rookie'+(p.pick?' #'+p.pick:'')+'</span>':''}${p.fp?' · '+Number(p.fp).toFixed(1)+' pts/p'+(p.rank?' <span class="muted">(#'+p.rank+')</span>':''):''}</div></div>
+          <div class="small muted">${p.pos?'<b style="color:var(--text)">'+p.pos+'</b> · ':''}${p.team}${p.rookie?' · <span class="pill ok">rookie'+(p.pick?' #'+p.pick:'')+'</span>':''}${p.fp?' · '+Number(p.fp).toFixed(1)+' pts/p'+(p.rank?' <span class="muted">(#'+p.rank+')</span>':''):''}</div></div>
         ${status==='en_curso'?`<button class="sm" ${canPick(p)?'':'disabled'} onclick="pick(${p.id})">${S.armed===p.id?'Confirmar':'Elegir'}</button>`:''}
       </li>`).join('') || '<li class="muted">Nadie con ese filtro</li>'}
     </ul>
@@ -300,6 +303,62 @@ async function pick(pid){
   toast(p.name + ' fichado'); await refreshLeague(); render();
 }
 
+// ---------- Datos de equipo y mercado (compartidos) ----------
+const LIVE = ['pending','negotiating'];
+const posOf = id => S.byId[id]?.pos || null;
+function posOk(ids){
+  const ps = ids.map(id => posOf(id) || 'G-F');
+  if(ps.filter(p => p === 'C').length > 2) return false;
+  for(let i=0;i<ps.length;i++) for(let j=0;j<ps.length;j++) if(i!==j && ps[i].includes('G') && ps[j].includes('F')) return true;
+  return false;
+}
+function bestLineup(ids){
+  const fp = id => S.byId[id]?.fp ?? -1;
+  const by = ids.slice().sort((x,y)=>fp(y)-fp(x));
+  let best = null, bestSum = -1e9;
+  const n = by.length;
+  for(let a=0;a<n;a++) for(let b=a+1;b<n;b++) for(let c=b+1;c<n;c++) for(let d=c+1;d<n;d++) for(let e=d+1;e<n;e++){
+    const five = [by[a],by[b],by[c],by[d],by[e]];
+    if(!posOk(five)) continue;
+    const s = five.reduce((t,id)=>t+fp(id),0);
+    if(s > bestSum){ bestSum = s; best = five; }
+  }
+  const starters = best || by.slice(0,5);
+  return { starters, bench: by.filter(id=>!starters.includes(id)) };
+}
+async function loadTD(force){
+  if(S.td && S.td.league === S.league.id && !force) return S.td;
+  const lid = S.league.id, me = S.user.id;
+  const w = await sb.rpc('open_week', { p_season: SEASON });
+  const week = w.data && w.data.week_no ? w.data : null;
+  const none = Promise.resolve({ data: [] });
+  const [ro, rq, rs, lm, lu, wg] = await Promise.all([
+    sb.from('rosters').select('player_id,user_id,price_paid_m').eq('league_id', lid),
+    week ? sb.from('transfer_requests').select('*').eq('league_id', lid).eq('week_no', week.week_no).order('created_at') : none,
+    week ? sb.from('player_reservations').select('*').eq('league_id', lid).eq('week_no', week.week_no) : none,
+    sb.from('league_members').select('user_id,sanctions_m').eq('league_id', lid),
+    week ? sb.from('lineups').select('*').eq('league_id', lid).eq('user_id', me).eq('week_no', week.week_no).maybeSingle() : Promise.resolve({ data: null }),
+    week ? sb.rpc('week_games', { p_season: SEASON, p_week: week.week_no }) : none
+  ]);
+  if(ro.error){ fail(ro.error); return null; }
+  const games = {}; (wg.data || []).forEach(x => games[x.team] = x);
+  const owner = {}; ro.data.forEach(r => owner[r.player_id] = r.user_id);
+  const paid = {}; ro.data.filter(r => r.user_id === me).forEach(r => paid[r.player_id] = r.price_paid_m);
+  const reqs = rq.data || [], live = reqs.filter(t => LIVE.includes(t.status)), mineLive = live.filter(t => t.user_id === me);
+  const outs = new Set(mineLive.map(t => t.player_out)), ins = mineLive.map(t => t.player_in);
+  const roster = Object.keys(paid).map(Number);
+  const eff = roster.filter(id => !outs.has(id)).concat(ins);
+  const price = id => S.byId[id]?.price ?? 1;
+  const cost = {}; eff.forEach(id => cost[id] = paid[id] ?? price(id));
+  const sanc = (lm.data || []).find(x => x.user_id === me)?.sanctions_m || 0;
+  const bal = S.league.budget_m - roster.reduce((a,id)=>a+paid[id],0) - sanc + mineLive.reduce((a,t)=>a + (paid[t.player_out]||0) - price(t.player_in), 0);
+  S.td = { league: lid, week, games, owner, paid, cost, reqs, live, mineLive, outs, ins: new Set(ins), roster, eff, sanc, bal, res: rs.data || [], lineup: lu.data };
+  return S.td;
+}
+const fmtLock = w => new Date(w.locks_at).toLocaleString('es-ES',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+const pname = id => esc(S.byId[id]?.name || 'Jugador');
+const gamesLine = (T, id) => { if(!T.week) return ''; const g = T.games[S.byId[id]?.team]; return `<div class="small" style="color:${g?'var(--text)':'var(--bad)'}">${g ? `<b>${g.n} ${g.n===1?'partido':'partidos'}</b> <span class="muted">${esc(g.rivals)}</span>` : 'Sin partidos esta jornada'}</div>`; };
+
 // ---------- Mi equipo ----------
 async function renderTeam(){
   const t = myTeamInfo();
@@ -316,79 +375,69 @@ async function renderTeam(){
       <p class="small muted">Podrás montar tu quinteto, capitán y banquillo en cuanto termine el draft.</p>`;
     return;
   }
-  if(!S.lu || S.lu.league !== S.league.id){
+  if(!S.lu || S.lu.league !== S.league.id || !S.td){
     $('#tab').innerHTML = '<p class="muted">Cargando…</p>';
-    const [w, ro] = await Promise.all([
-      sb.rpc('open_week', { p_season: SEASON }),
-      sb.from('rosters').select('player_id,price_paid_m').eq('league_id', S.league.id).eq('user_id', S.user.id)
-    ]);
-    if(ro.error) return fail(ro.error);
-    const week = w.data && w.data.week_no ? w.data : null;
-    let saved = null, games = {};
-    if(week){
-      const [r, g] = await Promise.all([
-        sb.from('lineups').select('*').eq('league_id', S.league.id).eq('user_id', S.user.id).eq('week_no', week.week_no).maybeSingle(),
-        sb.rpc('week_games', { p_season: SEASON, p_week: week.week_no })
-      ]);
-      saved = r.data;
-      (g.data || []).forEach(x => games[x.team] = x);
-    }
-    const ids = ro.data.map(r=>r.player_id);
-    const paid = Object.fromEntries(ro.data.map(r=>[r.player_id, r.price_paid_m]));
-    const fp = id => S.byId[id]?.fp ?? -1;
+    const T = await loadTD(); if(!T) return;
+    const saved = T.lineup, ids = T.eff;
     let lu;
     if(saved && saved.starters.length + saved.bench_order.length === ids.length && [...saved.starters, ...saved.bench_order].every(id=>ids.includes(id)))
       lu = { starters:[...saved.starters], bench:[...saved.bench_order], c:saved.captain_id, vc:saved.vice_captain_id, saved:true, dirty:false };
     else {
-      const by = ids.slice().sort((x,y)=>fp(y)-fp(x));
-      lu = { starters:by.slice(0,5), bench:by.slice(5), c:by[0], vc:by[1], saved:false, dirty:true };
+      const b = bestLineup(ids);
+      lu = { starters:b.starters, bench:b.bench, c:b.starters[0], vc:b.starters[1], saved:false, dirty:true };
     }
-    S.lu = { ...lu, league:S.league.id, week, paid, games, pending:null };
+    S.lu = { ...lu, league:S.league.id, pending:null, open:null };
   }
   if(S.tab === 'equipo') drawTeam();
 }
 function drawTeam(){
-  const L = S.lu, t = myTeamInfo();
-  const closes = L.week ? new Date(L.week.locks_at).toLocaleString('es-ES',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : null;
-  const sub = id => { const pl = S.byId[id] || {}; return `${pl.team||''} · ${L.paid[id]}M${pl.fp!=null?' · '+Number(pl.fp).toFixed(1)+' pts/p':''}${pl.rookie?' · <span class="pill ok">rookie</span>':''}`; };
-  const nm = id => esc(S.byId[id]?.name || 'Jugador');
-  const gm = id => { if(!L.week) return ''; const g = L.games[S.byId[id]?.team]; return `<div class="small" style="color:${g?'var(--text)':'var(--bad)'}">${g ? `<b>${g.n} ${g.n===1?'partido':'partidos'}</b> <span class="muted">${esc(g.rivals)}</span>` : 'Sin partidos esta jornada'}</div>`; };
-  const tot = L.starters.reduce((a,id)=>a+(L.games[S.byId[id]?.team]?.n||0),0);
-  const ready = L.starters.length === 5 && L.c && L.vc && L.c !== L.vc;
-  const status = !L.week ? '' : L.dirty ? (L.saved ? 'Cambios sin guardar' : 'Propuesta sin guardar') : 'Guardada';
+  const L = S.lu, T = S.td;
+  const reqIn = id => T.mineLive.find(t => t.player_in === id);
+  const sub = id => { const pl = S.byId[id] || {}; return `${pl.pos ? '<b style="color:var(--text)">'+pl.pos+'</b> · ' : ''}${pl.team||''} · ${T.cost[id]}M${pl.fp!=null?' · '+Number(pl.fp).toFixed(1)+' pts/p':''}${pl.rookie?' · <span class="pill ok">rookie</span>':''}`; };
+  const tag = id => { const r = reqIn(id); return r ? ` <span class="pill ${r.status==='negotiating'?'accent':''}">${r.status==='negotiating'?'En negociación':'Fichaje pendiente'}</span>` : ''; };
+  const strip = id => { if(L.open !== id) return ''; const r = reqIn(id);
+    return `<li style="border-bottom:1px solid var(--line);padding:0 0 10px"><div class="row" style="width:100%">${r
+      ? `${r.status==='negotiating' ? `<button class="sm" onclick="openRoom(${id})">Sala de negociación</button>` : ''}<button class="sm ghost" onclick="mkCancel('${r.id}')">Cancelar fichaje (vuelve ${pname(r.player_out)})</button>`
+      : `<button class="sm" onclick="startSwap(${id})">Cambiar por un agente libre</button>`}</div></li>`; };
+  const pOk = posOk(L.starters);
+  const ready = L.starters.length === 5 && L.c && L.vc && L.c !== L.vc && pOk;
+  const status = !T.week ? '' : L.dirty ? (L.saved ? 'Cambios sin guardar' : 'Propuesta sin guardar') : 'Guardada';
+  const tot = L.starters.reduce((a,id)=>a+(T.games[S.byId[id]?.team]?.n||0),0);
   $('#tab').innerHTML = `
     <div class="card" style="margin-top:12px">
-      <div><div class="between"><div class="name">${L.week ? 'Jornada ' + L.week.week_no : 'Temporada terminada'}</div><span class="pill ${L.dirty?'':'ok'}" style="white-space:nowrap">${status}</span></div>
-      <div class="small muted">${closes ? 'Se puede cambiar hasta ' + closes + ' (1 h antes del primer partido). Hasta entonces nadie ve la tuya.' : ''}</div></div>
+      <div class="between"><div class="name">${T.week ? 'Jornada ' + T.week.week_no : 'Temporada terminada'}</div><span class="pill ${L.dirty?'':'ok'}" style="white-space:nowrap">${status}</span></div>
+      <div class="small muted">${T.week ? 'Se puede cambiar hasta ' + fmtLock(T.week) + ' (1 h antes del primer partido). Hasta entonces nadie ve la tuya.' : ''}</div>
     </div>
-    <h2>Quinteto titular <span class="small muted">· ${L.week ? tot + ' partidos entre los cinco' : 'puntúan al 100%'}</span></h2>
-    ${L.pending ? `<p class="small"><b>¿A quién sustituye ${nm(L.pending)}?</b> <a href="#" onclick="luCancel();return false">Cancelar</a></p>` : ''}
+    <h2>Quinteto titular <span class="small muted">· ${T.week ? tot + ' partidos entre los cinco' : ''}</span></h2>
+    ${L.pending ? `<p class="small"><b>¿A quién sustituye ${pname(L.pending)}?</b> <a href="#" onclick="luCancel();return false">Cancelar</a></p>` : ''}
     <ul class="list card" style="padding:0 14px">
-      ${L.starters.map(id=>`<li>
-        <div class="grow"><div class="name">${nm(id)}</div><div class="small muted">${id===L.c?'<b style="color:var(--accent)">Capitán ×2</b> · ':id===L.vc?'<b style="color:var(--text)">Vicecapitán</b> · ':''}${sub(id)}</div>${gm(id)}</div>
+      ${L.starters.map(id=>`<li style="${L.open===id?'border-bottom:0':''}">
+        <div class="grow"><button class="lnk name" onclick="luOpen(${id})">${pname(id)}${tag(id)}</button><div class="small muted">${id===L.c?'<b style="color:var(--accent)">Capitán ×2</b> · ':id===L.vc?'<b style="color:var(--text)">Vicecapitán</b> · ':''}${sub(id)}</div>${gamesLine(T,id)}</div>
         ${L.pending ? `<button class="sm" onclick="luSwap(${id})">Sale</button>` : `
           <button class="tg ${id===L.c?'on':''}" onclick="luCap(${id})" aria-label="Hacer capitán">C</button>
           <button class="tg ${id===L.vc?'on':''}" onclick="luVice(${id})" aria-label="Hacer vicecapitán">VC</button>
           <button class="tg" onclick="luBench(${id})" aria-label="Mandar al banquillo">↓</button>`}
-      </li>`).join('')}
+      </li>${strip(id)}`).join('')}
       ${L.starters.length < 5 ? `<li class="muted">Te ${5-L.starters.length===1?'falta 1 titular':'faltan '+(5-L.starters.length)+' titulares'}: súbelo${5-L.starters.length===1?'':'s'} desde el banquillo.</li>` : ''}
     </ul>
-    <p class="small muted">El capitán puntúa doble. Si no juega, el doble pasa al vicecapitán.</p>
+    ${L.starters.length === 5 && !pOk ? `<p class="small" style="color:var(--bad)"><b>Quinteto no válido.</b> Necesitas al menos un exterior (G) y un alero (F), y como mucho dos pívots puros (C).</p>` : `<p class="small muted">Posiciones: mínimo un exterior (G) y un alero (F), máximo dos pívots (C). El capitán puntúa doble; si no juega, el doble pasa al vicecapitán.</p>`}
     <h2>Banquillo <span class="small muted">· entra por este orden si un titular no juega</span></h2>
     <ul class="list card" style="padding:0 14px">
-      ${L.bench.map((id,i)=>`<li>
+      ${L.bench.map((id,i)=>`<li style="${L.open===id?'border-bottom:0':''}">
         <span class="pill">${i+6}º</span>
-        <div class="grow"><div class="name">${nm(id)}</div><div class="small muted">${sub(id)}</div>${gm(id)}</div>
+        <div class="grow"><button class="lnk name" onclick="luOpen(${id})">${pname(id)}${tag(id)}</button><div class="small muted">${sub(id)}</div>${gamesLine(T,id)}</div>
         <button class="tg" onclick="luMove(${id},-1)" ${i===0?'disabled':''} aria-label="Subir prioridad">▲</button>
         <button class="tg" onclick="luMove(${id},1)" ${i===L.bench.length-1?'disabled':''} aria-label="Bajar prioridad">▼</button>
         <button class="tg" onclick="luStart(${id})" aria-label="Hacer titular">↑</button>
-      </li>`).join('') || '<li class="muted">Banquillo vacío</li>'}
+      </li>${strip(id)}`).join('') || '<li class="muted">Banquillo vacío</li>'}
     </ul>
-    ${L.week ? `<button style="width:100%;margin-top:8px" onclick="luSave()" ${ready && L.dirty ? '' : 'disabled'}>${L.dirty ? 'Guardar alineación' : 'Alineación guardada'}</button>
-      ${ready ? '' : '<p class="small muted">Para guardar necesitas 5 titulares, capitán y vicecapitán.</p>'}` : ''}
-    <p class="small muted" style="margin-top:14px">Presupuesto: ${t.spent}M gastados · ${t.left}M libres.</p>`;
+    <p class="small muted">Toca el nombre de un jugador para cambiarlo por un agente libre.</p>
+    ${T.week ? `<button style="width:100%;margin-top:8px" onclick="luSave()" ${ready && L.dirty ? '' : 'disabled'}>${L.dirty ? 'Guardar alineación' : 'Alineación guardada'}</button>
+      ${ready ? '' : '<p class="small muted">Para guardar necesitas 5 titulares válidos, capitán y vicecapitán.</p>'}` : ''}
+    <p class="small muted" style="margin-top:14px">Saldo: ${T.bal}M${T.sanc ? ' · sanciones ' + T.sanc + 'M' : ''}${T.mineLive.length ? ' · contando ' + T.mineLive.length + (T.mineLive.length===1?' fichaje pendiente':' fichajes pendientes') : ''}.</p>`;
 }
 function luTouch(){ S.lu.dirty = true; drawTeam(); }
+function luOpen(id){ S.lu.open = S.lu.open === id ? null : id; drawTeam(); }
 function luCap(id){ const L=S.lu; if(L.vc===id) L.vc = L.c; L.c = id; luTouch(); }
 function luVice(id){ const L=S.lu; if(L.c===id) L.c = L.vc; L.vc = id; luTouch(); }
 function luBench(id){ const L=S.lu; L.starters = L.starters.filter(x=>x!==id); L.bench.unshift(id); if(L.c===id) L.c=null; if(L.vc===id) L.vc=null; luTouch(); }
@@ -405,7 +454,145 @@ function luMove(id, d){ const b=S.lu.bench, i=b.indexOf(id), j=i+d; if(j<0||j>=b
 async function luSave(){ const L=S.lu;
   const { data, error } = await sb.rpc('save_lineup', { p_league:S.league.id, p_starters:L.starters, p_bench:L.bench, p_captain:L.c, p_vice:L.vc });
   if(error) return fail(error);
-  L.saved = true; L.dirty = false; drawTeam(); toast('Alineación guardada para la jornada ' + data);
+  L.saved = true; L.dirty = false; if(S.td) S.td.lineup = { starters:[...L.starters], bench_order:[...L.bench], captain_id:L.c, vice_captain_id:L.vc };
+  drawTeam(); toast('Alineación guardada para la jornada ' + data);
+}
+function startSwap(id){ S.mk = { ...(S.mk||{}), out:id, inn:null, armed:null }; S.room = null; S.tab = 'mercado'; render(); }
+
+// ---------- Mercado ----------
+function mkState(){ return S.mk || (S.mk = { q:'', team:'', pos:'', sort:'media', affordable:true, rookies:false, out:null, inn:null, armed:null }); }
+async function renderMarket(){
+  if(S.league.draft_status !== 'cerrado'){ $('#tab').innerHTML = '<div class="clock wait">El mercado se abre al terminar el draft.</div>'; return; }
+  const M = mkState(); ['q','team','pos'].forEach(k => M[k] = M[k] || ''); if(!M.sort) M.sort = 'media'; if(M.affordable === undefined) M.affordable = true;
+  if(!S.td){ $('#tab').innerHTML = '<p class="muted">Cargando…</p>'; if(!await loadTD()) return; }
+  if(S.tab !== 'mercado') return;
+  if(S.room) return drawRoom();
+  drawMarket();
+}
+function drawMarket(){
+  const M = mkState(), T = S.td, me = S.user.id;
+  if(!T.week){ $('#tab').innerHTML = '<div class="clock wait">La temporada ha terminado: mercado cerrado.</div>'; return; }
+  const price = id => S.byId[id]?.price ?? 1;
+  const canOut = T.roster.filter(id => !T.outs.has(id));              // los míos que aún puedo soltar
+  const refund = M.out ? (T.paid[M.out] || 0) : Math.max(0, ...canOut.map(id => T.paid[id] || 0));
+  const maxPrice = T.bal + refund;
+  const reqBy = {}; T.live.forEach(t => (reqBy[t.player_in] = reqBy[t.player_in] || []).push(t));
+  const resBy = {}; T.res.forEach(r => resBy[r.player_id] = r.user_id);
+  const q = M.q.toLowerCase();
+  const sorters = { media:(a,b)=>(b.fp??-1)-(a.fp??-1)||b.price-a.price, valor:(a,b)=>b.price-a.price||(b.fp??-1)-(a.fp??-1), barato:(a,b)=>a.price-b.price||(b.fp??-1)-(a.fp??-1),
+    partidos:(a,b)=>(T.games[b.team]?.n||0)-(T.games[a.team]?.n||0)||(b.fp??-1)-(a.fp??-1) };
+  const all = S.players.filter(p => !T.owner[p.id] && !T.ins.has(p.id) && (!q || p.name.toLowerCase().includes(q)) && (!M.team || p.team===M.team)
+      && (!M.pos || (p.pos||'').includes(M.pos)) && (!M.rookies || p.rookie) && (!M.affordable || p.price <= maxPrice)).sort(sorters[M.sort]);
+  const list = all.slice(0, 80);
+  const stLabel = { pending:'Pendiente', negotiating:'En negociación', confirmed:'Confirmado', frozen:'Congelado · −3M', withdrawn:'Retirado' };
+  const mineAll = T.reqs.filter(t => t.user_id === me && t.status !== 'withdrawn');
+  const chooser = M.inn && !M.out;
+  $('#tab').innerHTML = `
+    <div class="card" style="margin-top:12px">
+      <div class="between"><div class="name">Mercado · jornada ${T.week.week_no}</div><span class="pill">Saldo ${T.bal}M</span></div>
+      <div class="small muted">Los cambios entran en la jornada ${T.week.week_no} y se confirman al cierre: ${fmtLock(T.week)}. Si otro pide al mismo jugador, toca negociar.</div>
+    </div>
+    ${mineAll.length ? `<h2>Mis fichajes</h2><ul class="list card" style="padding:0 14px">${mineAll.map(t=>`<li>
+        <div class="grow"><div class="name">Entra ${pname(t.player_in)}</div><div class="small muted">Sale ${pname(t.player_out)} · ${price(t.player_in)}M</div></div>
+        <span class="pill ${t.status==='negotiating'?'accent':t.status==='confirmed'?'ok':''}">${stLabel[t.status]}</span>
+        ${t.status==='negotiating' ? `<button class="sm" onclick="openRoom(${t.player_in})">Sala</button>` : ''}
+        ${LIVE.includes(t.status) ? `<button class="sm ghost" onclick="mkCancel('${t.id}')">Retirar</button>` : ''}
+      </li>`).join('')}</ul>` : ''}
+    ${chooser ? `
+      <h2>¿Quién sale por ${pname(M.inn)}? <span class="small muted">· cuesta ${price(M.inn)}M</span></h2>
+      <ul class="list card" style="padding:0 14px">${canOut.slice().sort((a,b)=>(S.byId[a]?.fp??-1)-(S.byId[b]?.fp??-1)).map(id=>{ const ok = T.bal + (T.paid[id]||0) - price(M.inn) >= 0; return `<li>
+        <div class="grow"><div class="name">${pname(id)}</div><div class="small muted">${posOf(id)||''} · recuperas ${T.paid[id]}M${S.byId[id]?.fp!=null?' · '+Number(S.byId[id].fp).toFixed(1)+' pts/p':''}${ok?'':' · no te llega'}</div></div>
+        <button class="sm" ${ok?'':'disabled'} onclick="mkConfirm(${id},${M.inn})">${M.armed===id?'Confirmar':'Sale'}</button></li>`}).join('')}</ul>
+      <button class="ghost" style="width:100%" onclick="mkReset()">Cancelar</button>` : `
+    ${M.out ? `<div class="clock">Buscas sustituto para ${pname(M.out)} · recuperas ${T.paid[M.out]}M · puedes pagar hasta ${maxPrice}M <a href="#" onclick="mkReset();return false" style="color:inherit;margin-left:6px">Cancelar</a></div>` : ''}
+    <h2>Agentes libres</h2>
+    <div class="row"><input id="mq" placeholder="Buscar jugador" value="${esc(M.q)}">
+      <select id="mteam" style="max-width:104px"><option value="">Equipo</option>${TEAMS.map(t=>`<option ${M.team===t?'selected':''}>${t}</option>`).join('')}</select></div>
+    <div class="row">
+      <select id="msort" aria-label="Ordenar"><option value="media" ${M.sort==='media'?'selected':''}>Orden: media de puntos</option><option value="partidos" ${M.sort==='partidos'?'selected':''}>Orden: partidos esta jornada</option><option value="valor" ${M.sort==='valor'?'selected':''}>Orden: caros primero</option><option value="barato" ${M.sort==='barato'?'selected':''}>Orden: baratos primero</option></select>
+      <select id="mpos" aria-label="Posición" style="max-width:130px"><option value="">Posición</option><option value="G" ${M.pos==='G'?'selected':''}>Exterior (G)</option><option value="F" ${M.pos==='F'?'selected':''}>Alero (F)</option><option value="C" ${M.pos==='C'?'selected':''}>Pívot (C)</option></select>
+    </div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px">
+      <label class="small muted"><input type="checkbox" id="maf" ${M.affordable?'checked':''} style="width:auto;margin:0 6px 0 0">Solo los que puedo pagar (≤ ${Math.max(maxPrice,0)}M)</label>
+      <label class="small muted"><input type="checkbox" id="mrk" ${M.rookies?'checked':''} style="width:auto;margin:0 6px 0 0">Solo rookies</label>
+    </div>
+    <p class="small muted" style="margin:0 0 4px">${all.length} libres${all.length>80?' · se muestran 80':''}</p>
+    <ul class="list card" style="padding:0 14px">
+      ${list.map(p=>{ const others = (reqBy[p.id]||[]).filter(t=>t.user_id!==me); const rsv = resBy[p.id]; const blocked = rsv && rsv !== me; const g = T.games[p.team];
+        return `<li>
+        <span class="price">${p.price}M</span>
+        <div class="grow"><div class="name">${esc(p.name)}</div>
+          <div class="small muted">${p.pos ? '<b style="color:var(--text)">'+p.pos+'</b> · ' : ''}${p.team}${p.fp!=null?' · '+Number(p.fp).toFixed(1)+' pts/p':''}${p.rookie?' · <span class="pill ok">rookie</span>':''} · ${g?g.n+' part.':'sin partidos'}</div>
+          ${others.length ? `<div class="small" style="color:var(--accent)">Pedido por ${others.map(t=>esc(member(t.user_id).team)).join(', ')}: si lo pides, vais a negociación</div>` : ''}
+          ${rsv ? `<div class="small" style="color:${blocked?'var(--bad)':'var(--ok)'}">${blocked ? 'Reservado esta jornada para ' + esc(member(rsv).team) : 'Reservado para ti esta jornada'}</div>` : ''}</div>
+        <button class="sm" ${blocked || p.price > maxPrice ? 'disabled' : ''} onclick="mkPick(${p.id})">${M.out && M.armed===p.id ? 'Confirmar' : 'Fichar'}</button>
+      </li>`}).join('') || '<li class="muted">Nadie con ese filtro</li>'}
+    </ul>`}`;
+  if(chooser) return;
+  $('#mq').oninput = e => { M.q = e.target.value; const pos = e.target.selectionStart; drawMarket(); const i=$('#mq'); i.focus(); i.setSelectionRange(pos,pos); };
+  $('#mteam').onchange = e => { M.team = e.target.value; drawMarket(); };
+  $('#msort').onchange = e => { M.sort = e.target.value; drawMarket(); };
+  $('#mpos').onchange = e => { M.pos = e.target.value; drawMarket(); };
+  $('#maf').onchange = e => { M.affordable = e.target.checked; drawMarket(); };
+  $('#mrk').onchange = e => { M.rookies = e.target.checked; drawMarket(); };
+}
+function mkReset(){ const M = mkState(); M.out = null; M.inn = null; M.armed = null; drawMarket(); }
+function mkPick(id){ const M = mkState();
+  if(!M.out){ M.inn = id; M.armed = null; return drawMarket(); }
+  if(M.armed !== id){ M.armed = id; drawMarket(); return toast(`Pulsa "Confirmar": entra ${S.byId[id].name}, sale ${S.byId[M.out]?.name}`); }
+  mkDo(M.out, id); }
+function mkConfirm(out, inn){ const M = mkState();
+  if(M.armed !== out){ M.armed = out; drawMarket(); return toast(`Pulsa "Confirmar": entra ${S.byId[inn].name}, sale ${S.byId[out]?.name}`); }
+  mkDo(out, inn); }
+async function mkDo(out, inn){
+  const { data, error } = await sb.rpc('request_swap', { p_league:S.league.id, p_out:out, p_in:inn });
+  const M = mkState(); M.armed = null;
+  if(error){ drawMarket(); return fail(error); }
+  M.out = null; M.inn = null; S.td = null; S.lu = null;
+  await loadTD();
+  if(data === 'negotiating'){ toast('Otro equipo también lo quiere: se abre la negociación'); S.room = inn; return render(); }
+  toast('Fichaje pendiente: ya puedes alinearlo'); render();
+}
+async function mkCancel(id){
+  if(S.cancelArm !== id){ S.cancelArm = id; setTimeout(()=>S.cancelArm=null, 4000); return toast('Pulsa otra vez para retirar el fichaje'); }
+  S.cancelArm = null;
+  const { error } = await sb.rpc('cancel_swap', { p_request:id });
+  if(error) return fail(error);
+  S.td = null; S.lu = null; S.room = null; await loadTD(); toast('Fichaje retirado'); render();
+}
+
+// ---------- Sala de negociación ----------
+function openRoom(pid){ S.room = pid; S.tab = 'mercado'; render(); }
+function closeRoom(){ S.room = null; stopRoomPoll(); render(); }
+function stopRoomPoll(){ if(S.roomPoll) clearInterval(S.roomPoll); S.roomPoll = null; }
+async function drawRoom(keepDraft){
+  const T = S.td, pid = S.room, me = S.user.id;
+  const { data:msgs, error } = await sb.from('transfer_messages').select('*').eq('league_id', S.league.id).eq('week_no', T.week.week_no).eq('player_id', pid).order('created_at');
+  if(error) return fail(error);
+  if(S.room !== pid || S.tab !== 'mercado') return;
+  const parts = T.live.filter(t => t.player_in === pid);
+  const mine = parts.find(t => t.user_id === me);
+  const open = parts.length > 1;
+  const draft = keepDraft ? ($('#rmsg')?.value || '') : '';
+  $('#tab').innerHTML = `
+    <p style="margin-top:12px"><a href="#" onclick="closeRoom();return false">← Mercado</a></p>
+    <div class="card">
+      <div class="small muted">En disputa · jornada ${T.week.week_no}</div>
+      <div class="name" style="font-size:18px">${pname(pid)} · ${S.byId[pid]?.price ?? 1}M</div>
+      <ul class="list" style="margin-top:6px">${parts.map((t,i)=>`<li style="padding:6px 0"><span class="pill">${i+1}º</span><div class="grow"><b>${esc(member(t.user_id).team)}</b> <span class="small muted">soltaría a ${pname(t.player_out)}${i===0?' · lo pidió primero':''}</span></div></li>`).join('') || '<li class="muted">Ya no hay nadie pidiéndolo.</li>'}</ul>
+    </div>
+    <p class="small muted">${open ? `Tenéis hasta ${fmtLock(T.week)}. Si nadie se retira: jugador congelado, −3M a cada uno y reservado la jornada siguiente para quien lo pidió primero.` : 'La disputa se ha resuelto: solo queda una petición y se confirmará al cierre.'}</p>
+    <div id="rlist">${(msgs||[]).map(m=>`<div class="card" style="margin:6px 0;padding:10px 12px;${m.user_id===me?'border-color:var(--accent)':''}"><div class="small muted">${esc(member(m.user_id).team)} · ${new Date(m.created_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div><div>${esc(m.body)}</div></div>`).join('') || '<p class="muted small">Nadie ha dicho nada todavía.</p>'}</div>
+    ${mine && open ? `<form id="rform" class="row" style="margin-top:8px"><input id="rmsg" maxlength="500" placeholder="Escribe tu propuesta" value="${esc(draft)}" style="margin:0"><button class="sm" style="flex:0 0 auto">Enviar</button></form>
+      <button class="ghost" style="width:100%;margin-top:10px" onclick="mkCancel('${mine.id}')">Me retiro (me quedo con ${pname(mine.player_out)})</button>` : ''}`;
+  const f = $('#rform'); if(f) f.onsubmit = async e => { e.preventDefault(); const v = $('#rmsg').value.trim(); if(!v) return;
+    const { error } = await sb.rpc('post_transfer_message', { p_league:S.league.id, p_player:pid, p_body:v });
+    if(error) return fail(error); drawRoom(); };
+  if(!S.roomPoll) S.roomPoll = setInterval(async () => {
+    if(document.hidden || S.tab !== 'mercado' || !S.room) return stopRoomPoll();
+    if(document.activeElement && document.activeElement.id === 'rmsg' && $('#rmsg').value) return;
+    await loadTD(true); if(S.room) drawRoom(true);
+  }, 6000);
 }
 
 // ---------- Predicciones ----------
