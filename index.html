@@ -164,7 +164,7 @@ async function openLeague(id){
   sb.rpc('settle_due').then(()=>{}, ()=>{});
   if(!S.players) await loadPlayers();
   await refreshLeague();
-  S.tab = l.draft_status === 'cerrado' ? 'equipo' : 'draft';
+  S.tab = l.draft_status === 'cerrado' ? 'hoy' : 'draft';
   render(); startPoll();
 }
 async function loadPlayers(){
@@ -194,7 +194,7 @@ async function refreshLeague(){
   S.picks = pk.data || []; S.state = st.data; if(lg.data) S.league = lg.data;
 }
 function startPoll(){ stopPoll(); S.poll = setInterval(async ()=>{
-  if(document.hidden || !S.league || S.league.draft_status === 'cerrado' && S.tab !== 'draft') return;
+  if(document.hidden || !S.league || S.league.draft_status === 'cerrado') return;
   const sig = () => S.picks.length + S.league.draft_status + S.members.map(m=>m.pos).join(',') + S.members.length;
   const before = sig();
   await refreshLeague();
@@ -213,7 +213,11 @@ function myTeamInfo(uid = S.user.id){
 }
 
 function render(){
-  const tabs = [['draft','Draft'],['equipo','Mi equipo'],['mercado','Mercado'],['pred','Predicciones'],['liga','Liga']];
+  const done = S.league.draft_status === 'cerrado';
+  const tabs = done ? [['hoy','Hoy'],['equipo','Mi equipo'],['mercado','Mercado'],['pred','Predicciones'],['liga','Liga']]
+                    : [['draft','Draft'],['equipo','Mi equipo'],['pred','Predicciones'],['liga','Liga']];
+  if(!tabs.some(([k]) => k === S.tab)) S.tab = tabs[0][0];
+  if(S.tab !== 'hoy') stopTick();
   if(S.tab !== 'mercado' || !S.room) stopRoomPoll();
   $('#app').innerHTML = `
     <div class="between" style="margin-top:14px">
@@ -222,7 +226,7 @@ function render(){
     </div>
     <nav class="tabs">${tabs.map(([k,t])=>`<button class="${S.tab===k?'on':''}" onclick="S.tab='${k}';render()">${t}</button>`).join('')}</nav>
     <main id="tab"></main>`;
-  ({ draft:renderDraft, equipo:renderTeam, mercado:renderMarket, pred:renderPred, liga:renderLiga })[S.tab]();
+  ({ draft:renderDraft, hoy:renderHome, equipo:renderTeam, mercado:renderMarket, pred:renderPred, liga:renderLiga })[S.tab]();
 }
 
 // ---------- Draft ----------
@@ -677,6 +681,68 @@ async function useVoucher(pid){
   if(error) return fail(error);
   S.td = null; S.lu = null; await loadTD(); toast('Preferencia usada: el jugador es tuyo'); drawRoom(); }
 
+// ---------- Hoy (home de la liga, tras el draft) ----------
+function txES(d){
+  const strip = s => s.replace(/\b(?:PG|SG|SF|PF|Gs|Fs|Cs|G|F|C)\s+(?=[A-ZÀ-Ý])/g, '');
+  return d.split(/\.\s+|\.$/).filter(Boolean).map(s => { s = strip(s.trim()); let m;
+    if(m = s.match(/^Re-signed (.+?)(?: to .+)?$/)) return 'renueva a ' + m[1];
+    if(m = s.match(/^Signed (.+?) to a two-way contract$/)) return 'ficha a ' + m[1] + ' (contrato dual)';
+    if(m = s.match(/^Signed (.+?) to .*extension$/)) return 'renueva a ' + m[1];
+    if(m = s.match(/^Signed (.+?)(?: to .+)?$/)) return 'ficha a ' + m[1];
+    if(m = s.match(/^Waived (.+)$/)) return 'corta a ' + m[1];
+    if(m = s.match(/^Claimed (.+?) off waivers$/)) return 'recoge a ' + m[1] + ' de los descartes';
+    if(m = s.match(/^Converted (.+?) to a two-way contract$/)) return 'pasa a ' + m[1] + ' a contrato dual';
+    if(m = s.match(/^Acquired (.+?) from (?:the )?(.+?) (?:in exchange )?for (.+)$/)) return 'adquiere a ' + m[1] + ' (llega de ' + m[2] + ' a cambio de ' + m[3] + ')';
+    if(m = s.match(/^Traded (.+?) to (?:the )?(.+?) (?:in exchange )?for (.+)$/)) return 'traspasa a ' + m[1] + ' a ' + m[2] + ' a cambio de ' + m[3];
+    return s; }).join('; ').replace(/ and /g, ' y ').replace(/cash considerations/g, 'dinero').replace(/\b(a|de) the /g, '$1 ');
+}
+function countdown(ms){ if(ms <= 0) return 'cerrada'; const s = Math.floor(ms/1000), d = Math.floor(s/86400), h = Math.floor(s%86400/3600), m = Math.floor(s%3600/60), x = s%60;
+  return (d ? d + 'd ' : '') + String(h).padStart(2,'0') + 'h ' + String(m).padStart(2,'0') + 'm ' + String(x).padStart(2,'0') + 's'; }
+function stopTick(){ if(S.tick) clearInterval(S.tick); S.tick = null; }
+async function renderHome(){
+  if(!S.td){ $('#tab').innerHTML = '<p class="muted">Cargando…</p>'; if(!await loadTD()) return; }
+  const T = S.td, me = S.user.id, lid = S.league.id;
+  const [tx, pr] = await Promise.all([
+    sb.from('nba_transactions').select('*').order('happened_at', { ascending:false }).range(0, 79),
+    sb.from('predictions').select('award').eq('league_id', lid).eq('user_id', me)
+  ]);
+  if(S.tab !== 'hoy') return;
+  const preds = (pr.data || []).length, predOpen = S.league.predictions_close_at && new Date() < new Date(S.league.predictions_close_at);
+  const rooms = {}; T.live.filter(t => t.status === 'negotiating').forEach(t => (rooms[t.player_in] = rooms[t.player_in] || []).push(t));
+  const deals = T.reqs.filter(t => t.agreed && t.status === 'pending');
+  const mineP = T.mineLive.filter(t => t.status === 'pending' && !t.agreed).length;
+  const ownerTag = id => { const o = T.owner[id]; return o === me ? 'tuyo' : o ? 'de ' + esc(member(o).team) : (S.byId[id]?.price >= 3 ? 'agente libre' : null); };
+  const news = (tx.data || []).map(x => ({ ...x, tags: x.player_ids.map(id => ({ id, tag: ownerTag(id) })).filter(t => t.tag) }))
+    .filter(x => x.relevance >= 3 || x.player_ids.some(id => T.owner[id])).slice(0, 7);
+  const lineupSaved = !!T.lineup;
+  $('#tab').innerHTML = `
+    ${T.week ? `<div class="clock ${lineupSaved ? 'wait' : ''}" style="margin-top:12px">
+      <div class="small" style="opacity:.8">Jornada ${T.week.week_no} · cierre de alineaciones</div>
+      <div id="cd" style="font-size:26px;font-variant-numeric:tabular-nums;margin:2px 0">${countdown(new Date(T.week.locks_at) - Date.now())}</div>
+      <div class="between"><span class="small">${fmtLock(T.week)} · ${lineupSaved ? 'tu alineación está guardada' : 'aún no has guardado tu alineación'}</span>
+      <button class="sm ${lineupSaved?'ghost':''}" style="${lineupSaved?'':'background:var(--accent-ink);color:var(--accent)'}" onclick="S.tab='equipo';render()">${lineupSaved ? 'Revisar' : 'Alinear'}</button></div>
+    </div>` : '<div class="clock wait" style="margin-top:12px">Temporada terminada.</div>'}
+    ${predOpen && preds < 6 ? `<div class="card between"><div><div class="name">Predicciones de temporada</div><div class="small muted">Llevas ${preds} de 6 · 3 puntos por acierto</div></div><button class="sm" onclick="S.tab='pred';render()">Completar</button></div>` : ''}
+    <h2>Mercado</h2>
+    <div class="card" style="padding:4px 14px"><ul class="list">
+      ${Object.entries(rooms).map(([pid, ts]) => `<li><div class="grow"><div class="name" style="white-space:normal">${ts.map(t=>esc(member(t.user_id).team)).join(' y ')} negocian por ${pname(+pid)}</div><div class="small muted">Mesa abierta${ts.some(t=>t.user_id===me)?' · estás dentro':''}</div></div><button class="sm ${ts.some(t=>t.user_id===me)?'':'ghost'}" onclick="openRoom(${pid})">Ver</button></li>`).join('')}
+      ${deals.map(t => `<li><div class="grow"><div class="name" style="white-space:normal">Acuerdo: ${esc(member(t.user_id).team)} se queda a ${pname(t.player_in)}</div><div class="small muted">Se confirma al cierre de la jornada</div></div><button class="sm ghost" onclick="openRoom(${t.player_in})">Ver</button></li>`).join('')}
+      ${mineP ? `<li><div class="grow"><div class="name" style="white-space:normal">Tienes ${mineP} ${mineP===1?'fichaje pendiente':'fichajes pendientes'}</div><div class="small muted">Nadie más lo sabe</div></div><button class="sm ghost" onclick="S.tab='mercado';render()">Ver</button></li>` : ''}
+      ${!Object.keys(rooms).length && !deals.length && !mineP ? '<li class="muted">Sin movimientos todavía. El primero que fiche abre la veda.</li>' : ''}
+    </ul></div>
+    <h2>Clasificación</h2>
+    <div class="card" style="padding:4px 14px"><ul class="list">
+      ${S.members.map((m,i) => `<li><span class="pill">${i+1}</span><div class="grow"><div class="name">${esc(m.team)}${m.id===me?' <span class="small muted">· tú</span>':''}</div></div><span class="price">0</span></li>`).join('')}
+    </ul><p class="small muted" style="margin:6px 0 10px">Los puntos empiezan a contar con la jornada 1.</p></div>
+    <h2>Movimientos en la NBA</h2>
+    <div class="card" style="padding:4px 14px"><ul class="list">
+      ${news.map(x => `<li><span class="pill">${esc(x.team||'NBA')}</span><div class="grow"><div style="font-size:14px">${esc(txES(x.description))}</div>
+        <div class="small muted">${new Date(x.happened_at).toLocaleDateString('es-ES',{day:'numeric',month:'short'})}${x.tags.length ? ' · ' + x.tags.map(t => `<b style="color:${t.tag==='tuyo'?'var(--accent)':'var(--text)'}">${pname(t.id)}: ${t.tag}</b>`).join(' · ') : ''}</div></div></li>`).join('') || '<li class="muted">Sin movimientos relevantes.</li>'}
+    </ul></div>`;
+  stopTick();
+  if(T.week) S.tick = setInterval(() => { const el = $('#cd'); if(!el || S.tab !== 'hoy') return stopTick(); el.textContent = countdown(new Date(T.week.locks_at) - Date.now()); }, 1000);
+}
+
 // ---------- Predicciones ----------
 async function renderPred(){
   $('#tab').innerHTML = '<p class="muted">Cargando…</p>';
@@ -725,6 +791,8 @@ function renderLiga(){
     <ul class="list card" style="padding:0 14px">${S.members.map(m=>`<li><span class="pill">${m.pos??'–'}</span><div class="grow"><div class="name">${esc(m.team)}</div><div class="small muted">${esc(m.name)}${m.id===S.league.commissioner_id?' · comisionado':''}</div></div><span class="small muted">${myTeamInfo(m.id).spent}M</span></li>`).join('')}</ul>
     ${pending ? `<div class="card"><div class="small muted">Código para invitar</div><div class="between"><code>${esc(S.league.invite_code)}</code><button class="ghost sm" onclick="navigator.clipboard.writeText('${esc(S.league.invite_code)}');toast('Copiado')">Copiar</button></div></div>`:''}
     <div class="card"><div class="small muted">Tu equipo</div><form id="ft" class="row"><input name="t" value="${esc(member(S.user.id).team)}" maxlength="30" style="margin:6px 0 0"><button class="sm" style="flex:0 0 auto;margin-top:6px">Guardar</button></form></div>
+    ${S.league.draft_status === 'cerrado' ? `<details class="card"><summary class="name" style="cursor:pointer">Resultado del draft</summary>
+      <ol class="small" style="padding-left:22px;margin:10px 0 0">${S.picks.map(p=>`<li value="${p.pick_no+1}"><b>${esc(S.byId[p.player_id]?.name || 'Jugador')}</b> (${p.price_m}M) → ${esc(member(p.user_id).team)}</li>`).join('')}</ol></details>` : ''}
     ${isComm() && pending ? `
       <h2>Panel del comisionado</h2>
       <div class="card">
