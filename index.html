@@ -457,7 +457,7 @@ async function luSave(){ const L=S.lu;
   L.saved = true; L.dirty = false; if(S.td) S.td.lineup = { starters:[...L.starters], bench_order:[...L.bench], captain_id:L.c, vice_captain_id:L.vc };
   drawTeam(); toast('Alineación guardada para la jornada ' + data);
 }
-function startSwap(id){ S.mk = { ...(S.mk||{}), out:id, inn:null, armed:null }; S.room = null; S.tab = 'mercado'; render(); }
+function startSwap(id){ S.mk = { ...(S.mk||{}), out:id, inn:null, armed:null }; S.room = null; S.tab = 'mercado'; render(); window.scrollTo(0,0); }
 
 // ---------- Mercado ----------
 function mkState(){ return S.mk || (S.mk = { q:'', team:'', pos:'', sort:'media', affordable:true, rookies:false, out:null, inn:null, armed:null }); }
@@ -492,6 +492,7 @@ function drawMarket(){
     <div class="card" style="margin-top:12px">
       <div class="between"><div class="name">Mercado · jornada ${T.week.week_no}</div><span class="pill">Saldo ${T.bal}M</span></div>
       <div class="small muted">Los cambios entran en la jornada ${T.week.week_no} y se confirman al cierre: ${fmtLock(T.week)}. Nadie ve lo que pides, salvo que otro equipo quiera al mismo jugador: entonces se abre la mesa de negociación.</div>
+      <div class="small" style="margin-top:8px"><b>Cada fichaje es un cambio:</b> sueltas a uno de los tuyos y recuperas lo que pagaste por él. Con tu saldo de ${T.bal}M ${M.out ? `y los ${T.paid[M.out]}M de ${pname(M.out)}` : 'y soltando a tu jugador más caro'} puedes fichar a alguien de hasta <b>${Math.max(maxPrice,0)}M</b>.</div>
     </div>
     ${mineAll.length ? `<h2>Mis fichajes</h2><ul class="list card" style="padding:0 14px">${mineAll.map(t=>`<li>
         <div class="grow"><div class="name">Entra ${pname(t.player_in)}</div><div class="small muted">Sale ${pname(t.player_out)} · ${price(t.player_in)}M</div></div>
@@ -504,8 +505,9 @@ function drawMarket(){
         <button class="sm ghost" onclick="openRoom(${pid})">Ver la mesa</button></li>`).join('')}</ul>` : ''}
     ${chooser ? `
       <h2>¿Quién sale por ${pname(M.inn)}? <span class="small muted">· cuesta ${price(M.inn)}M</span></h2>
-      <ul class="list card" style="padding:0 14px">${canOut.slice().sort((a,b)=>(S.byId[a]?.fp??-1)-(S.byId[b]?.fp??-1)).map(id=>{ const ok = T.bal + (T.paid[id]||0) - price(M.inn) >= 0; return `<li>
-        <div class="grow"><div class="name">${pname(id)}</div><div class="small muted">${posOf(id)||''} · recuperas ${T.paid[id]}M${S.byId[id]?.fp!=null?' · '+Number(S.byId[id].fp).toFixed(1)+' pts/p':''}${ok?'':' · no te llega'}</div></div>
+      <p class="small muted">Elige a quién sueltas. Arriba, los que te dan presupuesto suficiente.</p>
+      <ul class="list card" style="padding:0 14px">${canOut.slice().sort((a,b)=>{ const oa = T.bal+(T.paid[a]||0)-price(M.inn)>=0, ob = T.bal+(T.paid[b]||0)-price(M.inn)>=0; return (ob-oa) || (S.byId[a]?.fp??-1)-(S.byId[b]?.fp??-1); }).map(id=>{ const ok = T.bal + (T.paid[id]||0) - price(M.inn) >= 0; return `<li>
+        <div class="grow"><div class="name">${pname(id)}</div><div class="small muted">${posOf(id)||''} · recuperas ${T.paid[id]}M${S.byId[id]?.fp!=null?' · '+Number(S.byId[id].fp).toFixed(1)+' pts/p':''}${ok?'':' · <span style="color:var(--bad)">te faltarían '+(price(M.inn)-T.bal-(T.paid[id]||0))+'M</span>'}</div></div>
         <button class="sm" ${ok?'':'disabled'} onclick="mkConfirm(${id},${M.inn})">${M.armed===id?'Confirmar':'Sale'}</button></li>`}).join('')}</ul>
       <button class="ghost" style="width:100%" onclick="mkReset()">Cancelar</button>` : `
     ${M.out ? `<div class="clock">Buscas sustituto para ${pname(M.out)} · recuperas ${T.paid[M.out]}M · puedes pagar hasta ${maxPrice}M <a href="#" onclick="mkReset();return false" style="color:inherit;margin-left:6px">Cancelar</a></div>` : ''}
@@ -540,9 +542,9 @@ function drawMarket(){
   $('#maf').onchange = e => { M.affordable = e.target.checked; drawMarket(); };
   $('#mrk').onchange = e => { M.rookies = e.target.checked; drawMarket(); };
 }
-function mkReset(){ const M = mkState(); M.out = null; M.inn = null; M.armed = null; drawMarket(); }
+function mkReset(){ const M = mkState(); M.out = null; M.inn = null; M.armed = null; drawMarket(); window.scrollTo(0,0); }
 function mkPick(id){ const M = mkState();
-  if(!M.out){ M.inn = id; M.armed = null; return drawMarket(); }
+  if(!M.out){ M.inn = id; M.armed = null; drawMarket(); return window.scrollTo(0,0); }
   if(M.armed !== id){ M.armed = id; drawMarket(); return toast(`Pulsa "Confirmar": entra ${S.byId[id].name}, sale ${S.byId[M.out]?.name}`); }
   mkDo(M.out, id); }
 function mkConfirm(out, inn){ const M = mkState();
@@ -554,7 +556,7 @@ async function mkDo(out, inn){
   if(error){ drawMarket(); return fail(error); }
   M.out = null; M.inn = null; S.td = null; S.lu = null;
   await loadTD();
-  if(data === 'negotiating'){ toast('Otro equipo también lo quiere: se abre la negociación'); S.room = inn; return render(); }
+  if(data === 'negotiating'){ toast('Otro equipo también lo quiere: se abre la negociación'); S.room = inn; render(); return window.scrollTo(0,0); }
   toast('Fichaje pendiente: ya puedes alinearlo'); render();
 }
 async function mkCancel(id){
@@ -566,7 +568,7 @@ async function mkCancel(id){
 }
 
 // ---------- Sala de negociación ----------
-function openRoom(pid){ S.room = pid; S.tab = 'mercado'; render(); }
+function openRoom(pid){ S.room = pid; S.tab = 'mercado'; render(); window.scrollTo(0,0); }
 function closeRoom(){ S.room = null; stopRoomPoll(); render(); }
 function stopRoomPoll(){ if(S.roomPoll) clearInterval(S.roomPoll); S.roomPoll = null; }
 async function drawRoom(keepDraft){
