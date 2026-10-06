@@ -332,13 +332,14 @@ async function loadTD(force){
   const w = await sb.rpc('open_week', { p_season: SEASON });
   const week = w.data && w.data.week_no ? w.data : null;
   const none = Promise.resolve({ data: [] });
-  const [ro, rq, rs, lm, lu, wg] = await Promise.all([
+  const [ro, rq, rs, lm, lu, wg, pv] = await Promise.all([
     sb.from('rosters').select('player_id,user_id,price_paid_m').eq('league_id', lid),
     week ? sb.from('transfer_requests').select('*').eq('league_id', lid).eq('week_no', week.week_no).order('created_at') : none,
     week ? sb.from('player_reservations').select('*').eq('league_id', lid).eq('week_no', week.week_no) : none,
-    sb.from('league_members').select('user_id,sanctions_m').eq('league_id', lid),
+    sb.from('league_members').select('user_id,sanctions_m,adj_m').eq('league_id', lid),
     week ? sb.from('lineups').select('*').eq('league_id', lid).eq('user_id', me).eq('week_no', week.week_no).maybeSingle() : Promise.resolve({ data: null }),
-    week ? sb.rpc('week_games', { p_season: SEASON, p_week: week.week_no }) : none
+    week ? sb.rpc('week_games', { p_season: SEASON, p_week: week.week_no }) : none,
+    sb.from('preference_vouchers').select('*').eq('league_id', lid)
   ]);
   if(ro.error){ fail(ro.error); return null; }
   const games = {}; (wg.data || []).forEach(x => games[x.team] = x);
@@ -350,9 +351,10 @@ async function loadTD(force){
   const eff = roster.filter(id => !outs.has(id)).concat(ins);
   const price = id => S.byId[id]?.price ?? 1;
   const cost = {}; eff.forEach(id => cost[id] = paid[id] ?? price(id));
-  const sanc = (lm.data || []).find(x => x.user_id === me)?.sanctions_m || 0;
-  const bal = S.league.budget_m - roster.reduce((a,id)=>a+paid[id],0) - sanc + mineLive.reduce((a,t)=>a + (paid[t.player_out]||0) - price(t.player_in), 0);
-  S.td = { league: lid, week, games, owner, paid, cost, reqs, live, mineLive, outs, ins: new Set(ins), roster, eff, sanc, bal, res: rs.data || [], lineup: lu.data };
+  const mrow = (lm.data || []).find(x => x.user_id === me) || {};
+  const sanc = mrow.sanctions_m || 0, adj = mrow.adj_m || 0;
+  const bal = S.league.budget_m - roster.reduce((a,id)=>a+paid[id],0) - sanc + adj + mineLive.reduce((a,t)=>a + (paid[t.player_out]||0) - price(t.player_in), 0);
+  S.td = { league: lid, week, games, owner, paid, cost, reqs, live, mineLive, outs, ins: new Set(ins), roster, eff, sanc, adj, bal, res: rs.data || [], lineup: lu.data, vouchers: pv.data || [] };
   return S.td;
 }
 const fmtLock = w => new Date(w.locks_at).toLocaleString('es-ES',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
@@ -394,10 +396,10 @@ function drawTeam(){
   const L = S.lu, T = S.td;
   const reqIn = id => T.mineLive.find(t => t.player_in === id);
   const sub = id => { const pl = S.byId[id] || {}; return `${pl.pos ? '<b style="color:var(--text)">'+pl.pos+'</b> · ' : ''}${pl.team||''} · ${T.cost[id]}M${pl.fp!=null?' · '+Number(pl.fp).toFixed(1)+' pts/p':''}${pl.rookie?' · <span class="pill ok">rookie</span>':''}`; };
-  const tag = id => { const r = reqIn(id); return r ? ` <span class="pill ${r.status==='negotiating'?'accent':''}">${r.status==='negotiating'?'En negociación':'Fichaje pendiente'}</span>` : ''; };
+  const tag = id => { const r = reqIn(id); return r ? ` <span class="pill ${r.status==='negotiating'?'accent':''}">${r.status==='negotiating'?'En negociación':r.agreed?'Fichaje acordado':'Fichaje pendiente'}</span>` : ''; };
   const strip = id => { if(L.open !== id) return ''; const r = reqIn(id);
     return `<li style="border-bottom:1px solid var(--line);padding:0 0 10px"><div class="row" style="width:100%">${r
-      ? `${r.status==='negotiating' ? `<button class="sm" onclick="openRoom(${id})">Sala de negociación</button>` : ''}<button class="sm ghost" onclick="mkCancel('${r.id}')">Cancelar fichaje (vuelve ${pname(r.player_out)})</button>`
+      ? `${r.status==='negotiating' || r.agreed ? `<button class="sm" onclick="openRoom(${id})">Sala de negociación</button>` : ''}${r.agreed ? '' : `<button class="sm ghost" onclick="mkCancel('${r.id}')">Cancelar fichaje (vuelve ${pname(r.player_out)})</button>`}`
       : `<button class="sm" onclick="startSwap(${id})">Cambiar por un agente libre</button>`}</div></li>`; };
   const pOk = posOk(L.starters);
   const ready = L.starters.length === 5 && L.c && L.vc && L.c !== L.vc && pOk;
@@ -434,7 +436,7 @@ function drawTeam(){
     <p class="small muted">Toca el nombre de un jugador para cambiarlo por un agente libre.</p>
     ${T.week ? `<button style="width:100%;margin-top:8px" onclick="luSave()" ${ready && L.dirty ? '' : 'disabled'}>${L.dirty ? 'Guardar alineación' : 'Alineación guardada'}</button>
       ${ready ? '' : '<p class="small muted">Para guardar necesitas 5 titulares válidos, capitán y vicecapitán.</p>'}` : ''}
-    <p class="small muted" style="margin-top:14px">Saldo: ${T.bal}M${T.sanc ? ' · sanciones ' + T.sanc + 'M' : ''}${T.mineLive.length ? ' · contando ' + T.mineLive.length + (T.mineLive.length===1?' fichaje pendiente':' fichajes pendientes') : ''}.</p>`;
+    <p class="small muted" style="margin-top:14px">Saldo: ${T.bal}M${T.sanc ? ' · sanciones ' + T.sanc + 'M' : ''}${T.adj ? ' · acuerdos ' + (T.adj>0?'+':'') + T.adj + 'M' : ''}${T.mineLive.length ? ' · contando ' + T.mineLive.length + (T.mineLive.length===1?' fichaje pendiente':' fichajes pendientes') : ''}.</p>`;
 }
 function luTouch(){ S.lu.dirty = true; drawTeam(); }
 function luOpen(id){ S.lu.open = S.lu.open === id ? null : id; drawTeam(); }
@@ -493,12 +495,13 @@ function drawMarket(){
       <div class="between"><div class="name">Mercado · jornada ${T.week.week_no}</div><span class="pill">Saldo ${T.bal}M</span></div>
       <div class="small muted">Los cambios entran en la jornada ${T.week.week_no} y se confirman al cierre: ${fmtLock(T.week)}. Nadie ve lo que pides, salvo que otro equipo quiera al mismo jugador: entonces se abre la mesa de negociación.</div>
       <div class="small" style="margin-top:8px"><b>Cada fichaje es un cambio:</b> sueltas a uno de los tuyos y recuperas lo que pagaste por él. Con tu saldo de ${T.bal}M ${M.out ? `y los ${T.paid[M.out]}M de ${pname(M.out)}` : 'y soltando a tu jugador más caro'} puedes fichar a alguien de hasta <b>${Math.max(maxPrice,0)}M</b>.</div>
+      ${(()=>{ const have = T.vouchers.filter(v=>v.holder===me&&!v.used_at), owe = T.vouchers.filter(v=>v.debtor===me&&!v.used_at); return have.length||owe.length ? `<div class="small" style="margin-top:8px"><b>Preferencias:</b> ${[...have.map(v=>'tienes una sobre '+esc(member(v.debtor).team)), ...owe.map(v=>'le debes una a '+esc(member(v.holder).team))].join(' · ')}</div>` : ''; })()}
     </div>
     ${mineAll.length ? `<h2>Mis fichajes</h2><ul class="list card" style="padding:0 14px">${mineAll.map(t=>`<li>
         <div class="grow"><div class="name">Entra ${pname(t.player_in)}</div><div class="small muted">Sale ${pname(t.player_out)} · ${price(t.player_in)}M</div></div>
-        <span class="pill ${t.status==='negotiating'?'accent':t.status==='confirmed'?'ok':''}">${stLabel[t.status]}</span>
+        <span class="pill ${t.status==='negotiating'?'accent':t.status==='confirmed'||t.agreed?'ok':''}">${t.agreed && t.status==='pending' ? 'Acordado' : stLabel[t.status]}</span>
         ${t.status==='negotiating' ? `<button class="sm" onclick="openRoom(${t.player_in})">Sala</button>` : ''}
-        ${LIVE.includes(t.status) ? `<button class="sm ghost" onclick="mkCancel('${t.id}')">Retirar</button>` : ''}
+        ${LIVE.includes(t.status) && !t.agreed ? `<button class="sm ghost" onclick="mkCancel('${t.id}')">Retirar</button>` : ''}
       </li>`).join('')}</ul>` : ''}
     ${rooms.length ? `<h2>Negociaciones abiertas en la liga</h2><ul class="list card" style="padding:0 14px">${rooms.map(([pid,ts])=>`<li>
         <div class="grow"><div class="name">${pname(pid)}</div><div class="small muted">${ts.map(t=>esc(member(t.user_id).team)).join(' vs ')}</div></div>
@@ -568,40 +571,111 @@ async function mkCancel(id){
 }
 
 // ---------- Sala de negociación ----------
-function openRoom(pid){ S.room = pid; S.tab = 'mercado'; render(); window.scrollTo(0,0); }
-function closeRoom(){ S.room = null; stopRoomPoll(); render(); }
+function openRoom(pid){ S.room = pid; S.offer = null; S.tab = 'mercado'; render(); window.scrollTo(0,0); }
+function closeRoom(){ S.room = null; S.offer = null; stopRoomPoll(); render(); }
 function stopRoomPoll(){ if(S.roomPoll) clearInterval(S.roomPoll); S.roomPoll = null; }
-async function drawRoom(keepDraft){
-  const T = S.td, pid = S.room, me = S.user.id;
-  const { data:msgs, error } = await sb.from('transfer_messages').select('*').eq('league_id', S.league.id).eq('week_no', T.week.week_no).eq('player_id', pid).order('created_at');
-  if(error) return fail(error);
+function offerText(o, pid){
+  const K = esc(member(o.keeper).team), loser = o.keeper === o.from_user ? o.to_user : o.from_user, O = esc(member(loser).team), P = pname(pid);
+  if(o.comp_type === 'money') return `${K} se queda a ${P} y paga ${o.amount_m}M a ${O}.`;
+  if(o.comp_type === 'preference') return `${K} se queda a ${P}. ${O} se retira y se lleva una preferencia sobre ${K} para la próxima vez que coincidan.`;
+  if(o.comp_type === 'player') return `${K} se queda a ${P}. ${o.comp_player ? pname(o.comp_player) : 'El jugador que suelta'} queda reservado para ${O} la jornada siguiente.`;
+  return `${K} se queda a ${P}. ${O} se retira sin nada a cambio.`;
+}
+async function drawRoom(keep){
+  const T = S.td, pid = S.room, me = S.user.id, lid = S.league.id;
+  const [mr, or] = await Promise.all([
+    sb.from('transfer_messages').select('*').eq('league_id', lid).eq('week_no', T.week.week_no).eq('player_id', pid).order('created_at'),
+    sb.from('transfer_offers').select('*').eq('league_id', lid).eq('week_no', T.week.week_no).eq('player_id', pid).order('created_at')
+  ]);
+  if(mr.error) return fail(mr.error);
   if(S.room !== pid || S.tab !== 'mercado') return;
+  const msgs = mr.data || [], offers = or.data || [];
   const parts = T.live.filter(t => t.player_in === pid);
   const mine = parts.find(t => t.user_id === me);
+  const other = parts.find(t => t.user_id !== me);
   const open = parts.length > 1;
-  const draft = keepDraft ? ($('#rmsg')?.value || '') : '';
+  const accepted = offers.find(o => o.status === 'accepted');
+  const openOffer = offers.find(o => o.status === 'open');
+  const used = uid => offers.filter(o => o.from_user === uid).length;
+  const left = 3 - used(me);
+  const blocked = open && !openOffer && parts.every(t => used(t.user_id) >= 3);
+  const state = accepted ? 'Acuerdo alcanzado' : !open ? 'Resuelta' : openOffer ? 'Nueva oferta' : blocked ? 'Negociación bloqueada' : 'En curso';
+  const voucher = mine && other ? T.vouchers.find(v => v.holder === me && v.debtor === other.user_id && !v.used_at) : null;
+  const draft = keep ? ($('#rmsg')?.value || '') : '';
+  const F = S.offer;                                    // oferta que estoy montando
+  const when = d => new Date(d).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+  const stO = { open:'Esperando respuesta', accepted:'Aceptada', rejected:'Rechazada', expired:'Caducada' };
+  const items = [...msgs.map(m => ({ t:m.created_at, m })), ...offers.map(o => ({ t:o.created_at, o }))].sort((a,b) => a.t < b.t ? -1 : 1);
+  const myKeepOut = mine ? pname(mine.player_out) : '', otKeepOut = other ? pname(other.player_out) : '';
   $('#tab').innerHTML = `
     <div style="position:sticky;top:46px;z-index:4;background:var(--bg);padding:10px 0 8px;border-bottom:1px solid var(--line)">
-      <div class="between"><a href="#" onclick="closeRoom();return false" class="small">← Mercado</a><span class="small muted">${open ? 'Cierra ' + fmtLock(T.week) : 'Resuelta'}</span></div>
+      <div class="between"><a href="#" onclick="closeRoom();return false" class="small">← Mercado</a><span class="pill ${accepted?'ok':openOffer?'accent':''}">${state}</span></div>
       <div class="name" style="font-size:18px;margin-top:4px">${pname(pid)} · ${S.byId[pid]?.price ?? 1}M</div>
-      ${parts.map((t,i)=>`<div class="small" style="margin-top:2px"><span class="pill">${i+1}º</span> <b>${esc(member(t.user_id).team)}</b> <span class="muted">suelta a ${pname(t.player_out)}${i===0?' · lo pidió primero':''}</span></div>`).join('') || '<div class="small muted">Ya no hay nadie pidiéndolo.</div>'}
+      ${parts.map((t,i)=>`<div class="small" style="margin-top:2px"><b>${esc(member(t.user_id).team)}</b> <span class="muted">suelta a ${pname(t.player_out)}${open && i===0?' · lo pidió primero':''}${t.agreed?' · se lo queda':''}</span></div>`).join('') || '<div class="small muted">Ya no hay peticiones vivas por él.</div>'}
+      ${open ? `<div class="small muted" style="margin-top:2px">Cierra ${fmtLock(T.week)}</div>` : ''}
     </div>
-    <p class="small muted">${open ? `Si nadie se retira antes del cierre: jugador congelado, −3M a cada uno y reservado la jornada siguiente para quien lo pidió primero.` : 'La disputa se ha resuelto: solo queda una petición y se confirmará al cierre.'}</p>
-    <div id="rlist">${(msgs||[]).map(m=>`<div class="card" style="margin:6px 0;padding:10px 12px;${m.user_id===me?'border-color:var(--accent)':''}"><div class="small muted">${esc(member(m.user_id).team)} · ${new Date(m.created_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div><div>${esc(m.body)}</div></div>`).join('') || '<p class="muted small">Nadie ha dicho nada todavía.</p>'}</div>
-    ${!mine ? '<p class="small muted">Estás mirando: solo escriben los implicados.</p>' : ''}
+    <p class="small muted">${accepted ? 'Hay acuerdo: el fichaje se confirma al cierre de la jornada.' : open ? 'Sin acuerdo al cierre: jugador congelado, −3M a cada uno y reservado la jornada siguiente para quien lo pidió primero.' : 'La disputa ya no está abierta.'}</p>
+    <div id="rlist">${items.map(it => it.m
+      ? `<div class="card" style="margin:6px 0;padding:10px 12px;${it.m.user_id===me?'border-color:var(--line)':''}"><div class="small muted">${esc(member(it.m.user_id).team)} · ${when(it.t)}</div><div>${esc(it.m.body)}</div></div>`
+      : `<div class="card" style="margin:6px 0;padding:10px 12px;border-color:var(--accent)">
+          <div class="between"><span class="small" style="color:var(--accent)"><b>Oferta de ${esc(member(it.o.from_user).team)}</b> · ${when(it.t)}</span><span class="pill ${it.o.status==='accepted'?'ok':''}">${stO[it.o.status]}</span></div>
+          <div style="margin-top:4px">${offerText(it.o, pid)}</div>
+          ${it.o.status==='open' && it.o.to_user===me ? `<div class="row" style="margin-top:8px"><button class="sm" onclick="offerRespond('${it.o.id}',true)">${S.accArm===it.o.id?'Confirmar':'Aceptar'}</button><button class="sm ghost" onclick="offerRespond('${it.o.id}',false)">Rechazar</button><button class="sm ghost" onclick="offerCompose()" ${left>0?'':'disabled'}>Contraoferta</button></div>` : ''}
+        </div>`).join('') || '<p class="muted small">Nadie ha dicho nada todavía.</p>'}</div>
+    ${!mine && open ? '<p class="small muted">Estás mirando: solo negocian los implicados.</p>' : ''}
     ${mine && open ? `<div style="position:sticky;bottom:0;background:var(--bg);padding:8px 0 calc(8px + env(safe-area-inset-bottom));border-top:1px solid var(--line);margin-top:8px">
-      <form id="rform" class="row"><input id="rmsg" maxlength="500" placeholder="Escribe tu propuesta" value="${esc(draft)}" style="margin:0"><button class="sm" style="flex:0 0 auto">Enviar</button></form>
-      <button class="ghost sm" style="width:100%;margin-top:8px" onclick="mkCancel('${mine.id}')">Me retiro (me quedo con ${pname(mine.player_out)})</button></div>` : ''}`;
-  if(!keepDraft) window.scrollTo(0, document.body.scrollHeight);
+      ${F ? `<div class="card" style="margin:0 0 8px;padding:12px">
+          <div class="name">Tu oferta <span class="small muted">· te quedan ${left}</span></div>
+          <label class="small muted">¿Quién se queda a ${pname(pid)}?</label>
+          <select id="okeep"><option value="1" ${F.keep?'selected':''}>Yo (suelto a ${myKeepOut})</option><option value="0" ${F.keep?'':'selected'}>${esc(member(other.user_id).team)} (suelta a ${otKeepOut})</option></select>
+          <label class="small muted">¿Qué recibe el que se retira?</label>
+          <select id="ocomp">
+            <option value="none" ${F.comp==='none'?'selected':''}>Nada</option>
+            <option value="money1" ${F.comp==='money'&&F.amount===1?'selected':''}>1 millón</option>
+            <option value="money2" ${F.comp==='money'&&F.amount===2?'selected':''}>2 millones</option>
+            <option value="money3" ${F.comp==='money'&&F.amount===3?'selected':''}>3 millones</option>
+            <option value="preference" ${F.comp==='preference'?'selected':''}>Una preferencia para la próxima colisión</option>
+            <option value="player" ${F.comp==='player'?'selected':''}>Reserva de ${F.keep ? myKeepOut : otKeepOut} (el jugador que se suelta)</option>
+          </select>
+          <div class="row"><button class="sm" onclick="offerSend()">Enviar oferta</button><button class="sm ghost" onclick="S.offer=null;drawRoom(true)">Cancelar</button></div>
+        </div>` : `
+      <form id="rform" class="row"><input id="rmsg" maxlength="500" placeholder="Escribe un mensaje" value="${esc(draft)}" style="margin:0"><button class="sm" style="flex:0 0 auto">Enviar</button></form>
+      <div class="row" style="margin-top:8px">
+        <button class="sm" onclick="offerCompose()" ${left>0 && !(openOffer && openOffer.from_user===me) ? '' : 'disabled'}>${openOffer && openOffer.from_user===me ? 'Oferta enviada' : left>0 ? 'Hacer oferta (' + left + ')' : 'Sin ofertas'}</button>
+        <button class="sm ghost" onclick="mkCancel('${mine.id}')">Me retiro</button>
+      </div>
+      ${voucher ? `<button class="sm ghost" style="width:100%;margin-top:8px;border-color:var(--accent)" onclick="useVoucher(${pid})">${S.vArm?'Confirmar: ':''}Usar mi preferencia: ${esc(member(other.user_id).team)} se retira</button>` : ''}`}
+      </div>` : ''}`;
   const f = $('#rform'); if(f) f.onsubmit = async e => { e.preventDefault(); const v = $('#rmsg').value.trim(); if(!v) return;
-    const { error } = await sb.rpc('post_transfer_message', { p_league:S.league.id, p_player:pid, p_body:v });
+    const { error } = await sb.rpc('post_transfer_message', { p_league:lid, p_player:pid, p_body:v });
     if(error) return fail(error); drawRoom(); };
+  const ok = $('#okeep'); if(ok){ ok.onchange = e => { S.offer.keep = e.target.value === '1'; drawRoom(true); };
+    $('#ocomp').onchange = e => { const v = e.target.value; if(v.startsWith('money')){ S.offer.comp = 'money'; S.offer.amount = +v.slice(5); } else { S.offer.comp = v; S.offer.amount = null; } }; }
+  if(!keep) window.scrollTo(0, document.body.scrollHeight);
   if(!S.roomPoll) S.roomPoll = setInterval(async () => {
     if(document.hidden || S.tab !== 'mercado' || !S.room) return stopRoomPoll();
-    if(document.activeElement && document.activeElement.id === 'rmsg' && $('#rmsg').value) return;
+    const a = document.activeElement;
+    if(S.offer || (a && a.id === 'rmsg' && a.value)) return;
     await loadTD(true); if(S.room) drawRoom(true);
   }, 6000);
 }
+function offerCompose(){ S.offer = { keep:true, comp:'none', amount:null }; drawRoom(true); }
+async function offerSend(){ const F = S.offer, pid = S.room;
+  const { error } = await sb.rpc('make_offer', { p_league:S.league.id, p_player:pid, p_i_keep:F.keep, p_comp:F.comp, p_amount:F.amount });
+  if(error) return fail(error);
+  S.offer = null; toast('Oferta enviada'); drawRoom(); }
+async function offerRespond(id, accept){
+  if(accept && S.accArm !== id){ S.accArm = id; setTimeout(()=>S.accArm=null, 4000); drawRoom(true); return toast('Pulsa "Confirmar" para cerrar el acuerdo'); }
+  S.accArm = null;
+  const { error } = await sb.rpc('respond_offer', { p_offer:id, p_accept:accept });
+  if(error) return fail(error);
+  S.td = null; S.lu = null; await loadTD(); toast(accept ? 'Acuerdo cerrado' : 'Oferta rechazada'); drawRoom(); }
+async function useVoucher(pid){
+  if(!S.vArm){ S.vArm = true; setTimeout(()=>S.vArm=false, 4000); drawRoom(true); return toast('Pulsa otra vez para gastar tu preferencia'); }
+  S.vArm = false;
+  const { error } = await sb.rpc('use_preference', { p_league:S.league.id, p_player:pid });
+  if(error) return fail(error);
+  S.td = null; S.lu = null; await loadTD(); toast('Preferencia usada: el jugador es tuyo'); drawRoom(); }
 
 // ---------- Predicciones ----------
 async function renderPred(){
