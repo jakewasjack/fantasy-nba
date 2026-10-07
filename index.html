@@ -160,7 +160,7 @@ async function openLeague(id){
   localSet('league', id);
   const { data:l, error } = await sb.from('leagues').select('*').eq('id', id).single();
   if(error) return fail(error);
-  S.league = l; S.lu = null; S.td = null; S.room = null; S.mk = null;
+  S.league = l; S.lu = null; S.td = null; S.room = null; S.mk = null; S.view = null; S.d5w = null;
   sb.rpc('settle_due').then(()=>{}, ()=>{});
   if(!S.players) await loadPlayers();
   await refreshLeague();
@@ -183,13 +183,13 @@ async function loadPlayers(){
 async function refreshLeague(){
   const id = S.league.id;
   const [m, pk, st, lg] = await Promise.all([
-    sb.from('league_members').select('user_id,team_name,draft_position,profiles(display_name)').eq('league_id', id),
+    sb.from('league_members').select('user_id,team_name,draft_position,profiles(display_name,avatar_url)').eq('league_id', id),
     sb.from('draft_picks').select('*').eq('league_id', id).order('pick_no'),
     sb.rpc('draft_state', { p_league:id }),
     sb.from('leagues').select('*').eq('id', id).single()
   ]);
   if(m.error) return fail(m.error);
-  S.members = m.data.map(x=>({ id:x.user_id, team:x.team_name, pos:x.draft_position, name:x.profiles?.display_name || '—' }))
+  S.members = m.data.map(x=>({ id:x.user_id, team:x.team_name, pos:x.draft_position, name:x.profiles?.display_name || '—', avatar:x.profiles?.avatar_url || '' }))
     .sort((a,b)=>(a.pos??99)-(b.pos??99));
   S.picks = pk.data || []; S.state = st.data; if(lg.data) S.league = lg.data;
 }
@@ -214,15 +214,16 @@ function myTeamInfo(uid = S.user.id){
 
 function render(){
   const done = S.league.draft_status === 'cerrado';
-  const tabs = done ? [['hoy','Hoy'],['equipo','Mi equipo'],['mercado','Mercado'],['pred','Predicciones'],['liga','Liga']]
-                    : [['draft','Draft'],['equipo','Mi equipo'],['pred','Predicciones'],['liga','Liga']];
+  const tabs = done ? [['hoy','Hoy'],['equipo','Mi equipo'],['mercado','Mercado'],['pred','Pedradas'],['liga','Liga']]
+                    : [['draft','Draft'],['equipo','Mi equipo'],['pred','Pedradas'],['liga','Liga']];
   if(!tabs.some(([k]) => k === S.tab)) S.tab = tabs[0][0];
   if(S.tab !== 'hoy') stopTick();
   if(S.tab !== 'mercado' || !S.room) stopRoomPoll();
+  if(S.view){ stopTick(); stopRoomPoll(); $('#app').innerHTML = '<main id="tab"></main>'; return renderView(); }
   $('#app').innerHTML = `
     <div class="between" style="margin-top:14px">
       <div><div class="small muted">${esc(S.league.name)}</div><div class="name" style="font-size:18px">${esc(member(S.user.id).team)}</div></div>
-      <button class="ghost sm" onclick="viewHome()">Ligas</button>
+      <button onclick="openView('perfil')" aria-label="Perfil y ajustes" style="background:none;padding:0;border-radius:50%">${avatar(S.user.id, 40)}</button>
     </div>
     <nav class="tabs">${tabs.map(([k,t])=>`<button class="${S.tab===k?'on':''}" onclick="S.tab='${k}';render()">${t}</button>`).join('')}</nav>
     <main id="tab"></main>`;
@@ -681,6 +682,162 @@ async function useVoucher(pid){
   if(error) return fail(error);
   S.td = null; S.lu = null; await loadTD(); toast('Preferencia usada: el jugador es tuyo'); drawRoom(); }
 
+// ---------- Avatares ----------
+const LEAVE_READY = false;   // se activa cuando exista la función leave_league en la base de datos
+const AV_COLORS = ['#f28c28','#3fb37f','#4f8ef7','#e5534b','#b07cf7','#e0b23a','#39b8c4','#e56aa6'];
+const AV_BASE = SUPABASE_URL + '/storage/v1/object/public/avatars/';
+function avatar(uid, size = 36){
+  const m = member(uid), a = m.avatar || '';
+  if(a.startsWith(AV_BASE)) return `<img src="${esc(a)}" alt="" style="width:${size}px;height:${size}px;border-radius:50%;object-fit:cover;flex-shrink:0">`;
+  let i = a.startsWith('preset:') ? +a.slice(7) : [...String(uid||'')].reduce((t,c)=>t+c.charCodeAt(0),0);
+  return `<span aria-hidden="true" style="width:${size}px;height:${size}px;border-radius:50%;background:${AV_COLORS[i % 8]};color:#14110c;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:${Math.round(size*0.38)}px;flex-shrink:0">${esc((m.team||'?').trim().slice(0,2).toUpperCase())}</span>`;
+}
+async function setAvatar(v){
+  const { error } = await sb.from('profiles').update({ avatar_url: v }).eq('id', S.user.id);
+  if(error) return fail(error);
+  await refreshLeague(); render(); toast('Avatar actualizado');
+}
+async function avatarUpload(file){
+  if(!file) return;
+  try{
+    const img = await createImageBitmap(file), s = 256, c = document.createElement('canvas'); c.width = c.height = s;
+    const k = Math.max(s/img.width, s/img.height), w = img.width*k, h = img.height*k;
+    c.getContext('2d').drawImage(img, (s-w)/2, (s-h)/2, w, h);
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.85));
+    const path = `${S.user.id}/${Date.now()}.jpg`;
+    toast('Subiendo foto…');
+    const { error } = await sb.storage.from('avatars').upload(path, blob, { contentType:'image/jpeg' });
+    if(error) return fail(error);
+    await setAvatar(sb.storage.from('avatars').getPublicUrl(path).data.publicUrl);
+  }catch(e){ fail('No he podido leer esa imagen'); }
+}
+
+// ---------- Vistas secundarias: perfil, reglas, comisionado ----------
+function openView(v){ S.view = v; render(); window.scrollTo(0,0); }
+function closeView(){ S.view = null; render(); }
+function renderView(){
+  ({ perfil:viewProfile, reglas:viewRules, comi:viewComm })[S.view]();
+}
+function viewProfile(){
+  const me = member(S.user.id), cur = me.avatar || '';
+  $('#tab').innerHTML = `
+    <p style="margin-top:14px"><a href="#" onclick="closeView();return false">← Volver</a></p>
+    <div class="row" style="justify-content:flex-start;gap:14px;margin:6px 0 4px"><span style="flex:0 0 auto">${avatar(S.user.id, 72)}</span>
+      <div style="flex:1"><div class="name" style="font-size:20px">${esc(me.team)}</div><div class="small muted">${esc(me.name)} · ${esc(S.user.email || '')}</div></div></div>
+    <h2>Avatar</h2>
+    <div class="card">
+      <div style="display:flex;gap:10px;flex-wrap:wrap">${AV_COLORS.map((c,i)=>`<button onclick="setAvatar('preset:${i}')" aria-label="Avatar ${i+1}" style="width:48px;height:48px;border-radius:50%;padding:0;background:${c};color:#14110c;font-weight:700;outline:${cur==='preset:'+i?'3px solid var(--text)':'none'};outline-offset:2px">${esc((me.team||'?').trim().slice(0,2).toUpperCase())}</button>`).join('')}</div>
+      <label class="ghost" style="display:block;text-align:center;margin-top:12px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;font-weight:600;cursor:pointer">Subir una foto<input type="file" accept="image/*" id="avf" style="display:none"></label>
+      <p class="small muted" style="margin:8px 0 0">La foto se recorta en cuadrado. La ven los participantes de tus ligas.</p>
+    </div>
+    <h2>Tu equipo en ${esc(S.league.name)}</h2>
+    <form id="pft" class="card"><label class="small muted">Nombre del equipo</label><input name="t" value="${esc(me.team)}" maxlength="30" required>
+      <label class="small muted">Tu nombre</label><input name="n" value="${esc(me.name)}" maxlength="30" required>
+      <button style="width:100%">Guardar</button></form>
+    <div class="card" style="padding:4px 14px"><ul class="list">
+      <li><button class="lnk grow" onclick="openView('reglas')">Reglas y puntuación</button><span>›</span></li>
+      ${isComm() ? `<li><button class="lnk grow" onclick="openView('comi')">Panel del comisionado</button><span>›</span></li>` : ''}
+      <li><button class="lnk grow" onclick="S.view=null;viewHome()">Cambiar de liga</button><span>›</span></li>
+    </ul></div>
+    <button class="ghost" style="width:100%;margin-top:6px" onclick="logout()">Cerrar sesión</button>
+    ${LEAVE_READY && !isComm() && S.league.draft_status === 'pendiente' ? `<button class="ghost" style="width:100%;margin-top:10px;color:var(--bad);border-color:var(--bad)" onclick="leaveLeague()">${S.leaveArm===2?'Confirmar: salir definitivamente':S.leaveArm===1?'¿Seguro? Pulsa otra vez':'Salir de la liga'}</button>` : `<p class="small muted" style="margin-top:12px">${isComm() ? 'Como comisionado no puedes salir de tu liga.' : S.league.draft_status === 'pendiente' ? 'Para salir de la liga antes del draft, díselo al comisionado.' : 'Con el draft hecho ya no se puede salir de la liga por tu cuenta: habla con el comisionado.'}</p>`}`;
+  $('#avf').onchange = e => avatarUpload(e.target.files[0]);
+  $('#pft').onsubmit = async e => { e.preventDefault(); const f = new FormData(e.target), t = f.get('t').trim(), n = f.get('n').trim(); if(!t || !n) return;
+    const [a, b] = await Promise.all([
+      sb.from('league_members').update({ team_name:t }).eq('league_id', S.league.id).eq('user_id', S.user.id),
+      sb.from('profiles').update({ display_name:n }).eq('id', S.user.id) ]);
+    if(a.error || b.error) return fail(a.error || b.error);
+    await refreshLeague(); render(); toast('Guardado'); };
+}
+async function leaveLeague(){
+  S.leaveArm = (S.leaveArm || 0) + 1;
+  if(S.leaveArm < 3){ clearTimeout(S.leaveT); S.leaveT = setTimeout(()=>{ S.leaveArm = 0; if(S.view==='perfil') render(); }, 5000); return render(); }
+  S.leaveArm = 0;
+  const { error } = await sb.rpc('leave_league', { p_league:S.league.id });
+  if(error) return fail(error);
+  localSet('league',''); S.view = null; S.league = null; toast('Has salido de la liga'); loadHome();
+}
+function viewRules(){
+  const row = (a,b) => `<li style="padding:7px 0"><div class="grow">${a}</div><b class="price" style="min-width:64px">${b}</b></li>`;
+  $('#tab').innerHTML = `
+    <p style="margin-top:14px"><a href="#" onclick="${isComm() || true ? "openView('perfil')" : ''};return false">← Volver</a></p>
+    <h1>Reglas y puntuación</h1>
+    <h2>Cómo puntúa un jugador en cada partido</h2>
+    <div class="card" style="padding:4px 14px"><ul class="list">
+      ${row('Punto','+1')}${row('Asistencia','+1,5')}${row('Rebote ofensivo','+1,5')}${row('Rebote defensivo','+1,2')}${row('Robo','+3,5')}${row('Tapón','+3,5')}
+      ${row('Pérdida','−2')}${row('Tiro de campo fallado','−1')}${row('Tiro libre fallado','−0,5')}${row('Falta personal','−0,5')}
+      ${row('Carga recibida','+3')}${row('Desvío','+1,5')}${row('Balón suelto recuperado','+1,5')}${row('Tiro contestado','+0,5')}
+      ${row('Impacto: +/− del partido × (minutos ÷ 36)','máx. ±8')}
+    </ul></div>
+    <h2>Tu equipo</h2>
+    <div class="card small">
+      <p><b>Plantilla de 10</b>, con al menos un rookie. Cada jugador solo puede estar en un equipo de la liga.</p>
+      <p><b>Quinteto titular:</b> puntúan al 100%. Mínimo un exterior (G) y un alero (F), máximo dos pívots (C).</p>
+      <p><b>Capitán ×2.</b> Si no juega, el doble pasa al vicecapitán. Si tampoco juega, ese día no hay doble.</p>
+      <p><b>Banquillo:</b> solo puntúa quien entra por un titular que no juega, en el orden que tú pongas.</p>
+      <p><b>Jornadas semanales.</b> La alineación se cierra 1 hora antes del primer partido de la jornada y hasta entonces nadie ve la tuya. Los puntos se actualizan cada día.</p>
+    </div>
+    <h2>Clasificación</h2>
+    <div class="card small"><p>Estilo Fórmula 1: cada jornada reparte puntos de liga según el puesto. Con 3 equipos: <b>3 · 1 · 0</b>. Con 10: <b>25 · 18 · 15 · 12 · 10 · 8 · 6 · 4 · 2 · 1</b>.</p>
+      <p><b>Premios del mes:</b> Mánager del mes +3, Rookie del mes +1, y el Pupas del mes, que no puntúa pero se lleva su tarjeta.</p>
+      <p><b>Pedradas:</b> tus apuestas de temporada (MVP, Rookie del año, Mejor defensor, Sexto hombre, Más mejorado y Campeón). 3 puntos de liga por acierto. Se cierran con el primer partido.</p>
+      <p><b>Quinteto de la semana de Drafteados:</b> +2 a cada jugador elegido.</p></div>
+    <h2>Mercado</h2>
+    <div class="card small">
+      <p><b>Solo agentes libres.</b> Cada fichaje es un cambio uno por uno: sueltas a uno de los tuyos y recuperas lo que pagaste. Precios fijos toda la temporada, sin límite de cambios, y el saldo no puede quedar negativo.</p>
+      <p><b>Tus peticiones son secretas.</b> Si otro equipo pide al mismo jugador, se abre una mesa de negociación que toda la liga puede mirar.</p>
+      <p><b>En la mesa</b> uno se queda al jugador y el otro se retira, a cambio de nada, de 1 a 3 millones, de una preferencia para la próxima colisión o de la reserva del jugador que se suelta. Tres ofertas por equipo.</p>
+      <p><b>Sin acuerdo al cierre:</b> jugador congelado, 3M de sanción a cada uno y reservado la jornada siguiente para quien lo pidió primero.</p>
+    </div>`;
+}
+async function viewComm(){
+  if(!isComm()) return closeView();
+  $('#tab').innerHTML = '<p class="muted" style="margin-top:14px">Cargando…</p>';
+  const T = await loadTD(); const wk = T && T.week ? T.week.week_no : 1;
+  if(S.d5w == null) S.d5w = Math.max(1, wk - 1);
+  const { data } = await sb.from('drafteados_week').select('*').eq('season', SEASON).eq('week_no', S.d5w).maybeSingle();
+  if(S.view !== 'comi') return;
+  const cur = data?.player_ids || [];
+  const label = id => S.byId[id] ? S.byId[id].name + ' · ' + S.byId[id].team : '';
+  $('#tab').innerHTML = `
+    <p style="margin-top:14px"><a href="#" onclick="openView('perfil');return false">← Volver</a></p>
+    <h1>Panel del comisionado</h1>
+    <h2>Quinteto de la semana de Drafteados</h2>
+    <form id="d5" class="card">
+      <label class="small muted">Jornada</label>
+      <select id="d5w">${Array.from({length:25},(_,i)=>`<option value="${i+1}" ${S.d5w===i+1?'selected':''}>Jornada ${i+1}${i+1===wk?' (abierta ahora)':''}</option>`).join('')}</select>
+      <datalist id="dl-d5">${S.players.map(p=>`<option value="${esc(p.name)} · ${p.team}">`).join('')}</datalist>
+      ${[0,1,2,3,4].map(i=>`<label class="small muted">Jugador ${i+1}</label><input name="p${i}" list="dl-d5" value="${esc(label(cur[i]))}" placeholder="Escribe y elige">`).join('')}
+      <button style="width:100%">Guardar quinteto</button>
+      <p class="small muted" style="margin:8px 0 0">Cada jugador elegido suma +2 esa jornada. Al guardar se anuncia en el muro.${data ? ' Guardado por última vez el ' + new Date(data.updated_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) + '.' : ''}</p>
+    </form>
+    <h2>Liga</h2>
+    <div class="card small"><p>Código de invitación: <code>${esc(S.league.invite_code)}</code></p>
+      <p class="muted" style="margin:0">El orden y el arranque del draft están en la pestaña Liga mientras el draft esté pendiente.</p></div>`;
+  $('#d5w').onchange = e => { S.d5w = +e.target.value; viewComm(); };
+  $('#d5').onsubmit = async e => { e.preventDefault(); const f = new FormData(e.target), ids = [];
+    for(let i=0;i<5;i++){ const v = (f.get('p'+i)||'').trim(); if(!v) continue; const p = S.players.find(p => (p.name+' · '+p.team) === v); if(!p) return fail(`No encuentro "${v}". Elígelo de la lista.`); if(ids.includes(p.id)) return fail(p.name + ' está repetido'); ids.push(p.id); }
+    const { error } = await sb.rpc('set_drafteados_five', { p_league:S.league.id, p_week:S.d5w, p_players:ids });
+    if(error) return fail(error); toast('Quinteto guardado'); viewComm(); };
+}
+
+// ---------- Muro (pique) ----------
+function postHTML(p){
+  const when = new Date(p.created_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}), d = p.data || {};
+  const team = uid => esc(member(uid).team);
+  if(p.kind === 'msg') return `<li style="align-items:flex-start">${avatar(p.user_id, 32)}<div class="grow"><div class="small muted"><b style="color:var(--text)">${team(p.user_id)}</b> · ${when}</div><div style="overflow-wrap:anywhere">${esc(p.body)}</div></div></li>`;
+  let txt = '';
+  if(p.kind === 'room_open') txt = `<b>${(d.users||[]).map(team).join(' y ')}</b> se pelean por <b>${pname(d.player)}</b>. Mesa de negociación abierta.`;
+  else if(p.kind === 'deal') txt = `<b>Acuerdo alcanzado:</b> ${team(d.keeper)} se queda a <b>${pname(d.player)}</b>.`;
+  else if(p.kind === 'frozen') txt = `<b>Negociación rota:</b> ${pname(d.player)} queda congelado y cada implicado paga 3M.`;
+  else if(p.kind === 'drafteados') txt = `<b>Quinteto Drafteados · jornada ${d.week}:</b> ${(d.players||[]).map(pname).join(', ') || 'vacío'}. +2 a cada uno.`;
+  else return '';
+  return `<li style="align-items:flex-start"><span class="pill accent" style="flex-shrink:0;margin-top:2px">Liga</span><div class="grow"><div>${txt}</div><div class="small muted">${when}</div></div></li>`;
+}
+async function wallSend(e){ e.preventDefault(); const i = $('#wmsg'), v = i.value.trim(); if(!v) return;
+  const { error } = await sb.rpc('post_wall', { p_league:S.league.id, p_body:v });
+  if(error) return fail(error); i.value = ''; renderHome(); }
+
 // ---------- Hoy (home de la liga, tras el draft) ----------
 function txES(d){
   const strip = s => s.replace(/\b(?:PG|SG|SF|PF|Gs|Fs|Cs|G|F|C)\s+(?=[A-ZÀ-Ý])/g, '');
@@ -702,10 +859,13 @@ function stopTick(){ if(S.tick) clearInterval(S.tick); S.tick = null; }
 async function renderHome(){
   if(!S.td){ $('#tab').innerHTML = '<p class="muted">Cargando…</p>'; if(!await loadTD()) return; }
   const T = S.td, me = S.user.id, lid = S.league.id;
-  const [tx, pr] = await Promise.all([
+  const [tx, pr, wl] = await Promise.all([
     sb.from('nba_transactions').select('*').order('happened_at', { ascending:false }).range(0, 79),
-    sb.from('predictions').select('award').eq('league_id', lid).eq('user_id', me)
+    sb.from('predictions').select('award').eq('league_id', lid).eq('user_id', me),
+    sb.from('league_posts').select('*').eq('league_id', lid).order('created_at', { ascending:false }).range(0, 49)
   ]);
+  const posts = wl.data || [], shown = S.wallAll ? posts : posts.slice(0, 4);
+  const draftMsg = $('#wmsg')?.value || '';
   if(S.tab !== 'hoy') return;
   const preds = (pr.data || []).length, predOpen = S.league.predictions_close_at && new Date() < new Date(S.league.predictions_close_at);
   const rooms = {}; T.live.filter(t => t.status === 'negotiating').forEach(t => (rooms[t.player_in] = rooms[t.player_in] || []).push(t));
@@ -722,7 +882,13 @@ async function renderHome(){
       <div class="between"><span class="small">${fmtLock(T.week)} · ${lineupSaved ? 'tu alineación está guardada' : 'aún no has guardado tu alineación'}</span>
       <button class="sm ${lineupSaved?'ghost':''}" style="${lineupSaved?'':'background:var(--accent-ink);color:var(--accent)'}" onclick="S.tab='equipo';render()">${lineupSaved ? 'Revisar' : 'Alinear'}</button></div>
     </div>` : '<div class="clock wait" style="margin-top:12px">Temporada terminada.</div>'}
-    ${predOpen && preds < 6 ? `<div class="card between"><div><div class="name">Predicciones de temporada</div><div class="small muted">Llevas ${preds} de 6 · 3 puntos por acierto</div></div><button class="sm" onclick="S.tab='pred';render()">Completar</button></div>` : ''}
+    ${predOpen && preds < 6 ? `<div class="card between"><div><div class="name">Pedradas de temporada</div><div class="small muted">Llevas ${preds} de 6 · 3 puntos por acierto</div></div><button class="sm" onclick="S.tab='pred';render()">Completar</button></div>` : ''}
+    <h2>Pique</h2>
+    <div class="card" style="padding:10px 14px">
+      <form id="wform" class="row"><input id="wmsg" maxlength="280" placeholder="Suelta algo a la liga…" value="${esc(draftMsg)}" style="margin:0"><button class="sm" style="flex:0 0 auto">Enviar</button></form>
+      <ul class="list" style="margin-top:6px">${shown.map(postHTML).join('') || '<li class="muted">El muro está vacío. Alguien tiene que tirar la primera piedra.</li>'}</ul>
+      ${posts.length > 4 ? `<button class="ghost sm" style="width:100%;margin-top:6px" onclick="S.wallAll=!S.wallAll;renderHome()">${S.wallAll ? 'Ver menos' : 'Ver todo el muro (' + posts.length + ')'}</button>` : ''}
+    </div>
     <h2>Mercado</h2>
     <div class="card" style="padding:4px 14px"><ul class="list">
       ${Object.entries(rooms).map(([pid, ts]) => `<li><div class="grow"><div class="name" style="white-space:normal">${ts.map(t=>esc(member(t.user_id).team)).join(' y ')} negocian por ${pname(+pid)}</div><div class="small muted">Mesa abierta${ts.some(t=>t.user_id===me)?' · estás dentro':''}</div></div><button class="sm ${ts.some(t=>t.user_id===me)?'':'ghost'}" onclick="openRoom(${pid})">Ver</button></li>`).join('')}
@@ -732,13 +898,14 @@ async function renderHome(){
     </ul></div>
     <h2>Clasificación</h2>
     <div class="card" style="padding:4px 14px"><ul class="list">
-      ${S.members.map((m,i) => `<li><span class="pill">${i+1}</span><div class="grow"><div class="name">${esc(m.team)}${m.id===me?' <span class="small muted">· tú</span>':''}</div></div><span class="price">0</span></li>`).join('')}
+      ${S.members.map((m,i) => `<li><span class="pill">${i+1}</span>${avatar(m.id, 30)}<div class="grow"><div class="name">${esc(m.team)}${m.id===me?' <span class="small muted">· tú</span>':''}</div></div><span class="price">0</span></li>`).join('')}
     </ul><p class="small muted" style="margin:6px 0 10px">Los puntos empiezan a contar con la jornada 1.</p></div>
     <h2>Movimientos en la NBA</h2>
     <div class="card" style="padding:4px 14px"><ul class="list">
       ${news.map(x => `<li><span class="pill">${esc(x.team||'NBA')}</span><div class="grow"><div style="font-size:14px">${esc(txES(x.description))}</div>
         <div class="small muted">${new Date(x.happened_at).toLocaleDateString('es-ES',{day:'numeric',month:'short'})}${x.tags.length ? ' · ' + x.tags.map(t => `<b style="color:${t.tag==='tuyo'?'var(--accent)':'var(--text)'}">${pname(t.id)}: ${t.tag}</b>`).join(' · ') : ''}</div></div></li>`).join('') || '<li class="muted">Sin movimientos relevantes.</li>'}
     </ul></div>`;
+  $('#wform').onsubmit = wallSend;
   stopTick();
   if(T.week) S.tick = setInterval(() => { const el = $('#cd'); if(!el || S.tab !== 'hoy') return stopTick(); el.textContent = countdown(new Date(T.week.locks_at) - Date.now()); }, 1000);
 }
@@ -753,7 +920,7 @@ async function renderPred(){
   const mine = Object.fromEntries(data.filter(d=>d.user_id===S.user.id).map(d=>[d.award,d]));
   const opts = (rookie) => S.players.filter(p=>!rookie||p.rookie).map(p=>`<option value="${esc(p.name)} · ${p.team}">`).join('');
   $('#tab').innerHTML = `
-    <p class="muted small">${closed ? 'Predicciones cerradas.' : 'Se cierran el ' + (closeAt ? closeAt.toLocaleString('es-ES',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}) : '—') + '. Cada acierto: 3 puntos de liga. Podéis repetir jugador.'}</p>
+    <p class="muted small">${closed ? 'Pedradas cerradas.' : 'Se cierran el ' + (closeAt ? closeAt.toLocaleString('es-ES',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}) : '—') + '. Cada acierto: 3 puntos de liga. Podéis repetir jugador.'}</p>
     <datalist id="dl-all">${opts(false)}</datalist><datalist id="dl-rk">${opts(true)}</datalist>
     <form id="fp" class="card">
       ${AWARDS.map(([k,t])=>{
@@ -763,7 +930,7 @@ async function renderPred(){
           ? `<select name="${k}" ${closed?'disabled':''}><option value="">—</option>${TEAMS.map(x=>`<option ${val===x?'selected':''}>${x}</option>`).join('')}</select>`
           : `<input name="${k}" list="${k==='roy'?'dl-rk':'dl-all'}" value="${esc(val)}" placeholder="Escribe y elige" ${closed?'disabled':''}>`);
       }).join('')}
-      ${closed?'':'<button style="width:100%">Guardar predicciones</button>'}
+      ${closed?'':'<button style="width:100%">Guardar pedradas</button>'}
     </form>
     ${closed ? `<h2>Lo que eligió cada uno</h2>${S.members.map(m=>`<div class="card"><div class="name">${esc(m.team)}</div>${AWARDS.map(([k,t])=>{const d=data.find(x=>x.user_id===m.id&&x.award===k);return `<div class="small"><span class="muted">${t}:</span> ${d?(k==='champion'?d.team:esc(S.byId[d.player_id]?.name)):'—'}</div>`}).join('')}</div>`).join('')}` : ''}`;
   if(closed) return;
@@ -777,9 +944,9 @@ async function renderPred(){
       if(k==='roy' && !p.rookie) return fail(p.name+' no es rookie');
       rows.push({ league_id:S.league.id, user_id:S.user.id, award:k, player_id:p.id, team:null, updated_at:new Date().toISOString() });
     }
-    if(!rows.length) return fail('Elige al menos una predicción');
+    if(!rows.length) return fail('Lanza al menos una pedrada');
     const { error } = await sb.from('predictions').upsert(rows, { onConflict:'league_id,user_id,award' });
-    if(error) return fail(error); toast('Predicciones guardadas (' + rows.length + ' de 6)');
+    if(error) return fail(error); toast('Pedradas guardadas (' + rows.length + ' de 6)');
   };
 }
 
@@ -788,9 +955,9 @@ function renderLiga(){
   const pending = S.league.draft_status === 'pendiente';
   $('#tab').innerHTML = `
     <h2>Participantes</h2>
-    <ul class="list card" style="padding:0 14px">${S.members.map(m=>`<li><span class="pill">${m.pos??'–'}</span><div class="grow"><div class="name">${esc(m.team)}</div><div class="small muted">${esc(m.name)}${m.id===S.league.commissioner_id?' · comisionado':''}</div></div><span class="small muted">${myTeamInfo(m.id).spent}M</span></li>`).join('')}</ul>
+    <ul class="list card" style="padding:0 14px">${S.members.map(m=>`<li><span class="pill">${m.pos??'–'}</span>${avatar(m.id, 30)}<div class="grow"><div class="name">${esc(m.team)}</div><div class="small muted">${esc(m.name)}${m.id===S.league.commissioner_id?' · comisionado':''}</div></div><span class="small muted">${myTeamInfo(m.id).spent}M</span></li>`).join('')}</ul>
     ${pending ? `<div class="card"><div class="small muted">Código para invitar</div><div class="between"><code>${esc(S.league.invite_code)}</code><button class="ghost sm" onclick="navigator.clipboard.writeText('${esc(S.league.invite_code)}');toast('Copiado')">Copiar</button></div></div>`:''}
-    <div class="card"><div class="small muted">Tu equipo</div><form id="ft" class="row"><input name="t" value="${esc(member(S.user.id).team)}" maxlength="30" style="margin:6px 0 0"><button class="sm" style="flex:0 0 auto;margin-top:6px">Guardar</button></form></div>
+    <div class="card" style="padding:4px 14px"><ul class="list"><li><button class="lnk grow" onclick="openView('reglas')">Reglas y puntuación</button><span>›</span></li>${isComm() ? `<li><button class="lnk grow" onclick="openView('comi')">Panel del comisionado</button><span>›</span></li>` : ''}</ul></div>
     ${S.league.draft_status === 'cerrado' ? `<details class="card"><summary class="name" style="cursor:pointer">Resultado del draft</summary>
       <ol class="small" style="padding-left:22px;margin:10px 0 0">${S.picks.map(p=>`<li value="${p.pick_no+1}"><b>${esc(S.byId[p.player_id]?.name || 'Jugador')}</b> (${p.price_m}M) → ${esc(member(p.user_id).team)}</li>`).join('')}</ol></details>` : ''}
     ${isComm() && pending ? `
@@ -800,9 +967,6 @@ function renderLiga(){
         ${S.members.map((m,i)=>`<label class="small muted">Pick ${i+1}</label><select name="o${i}" class="ord">${S.members.map(x=>`<option value="${x.id}" ${x.id===(S.members.find(y=>y.pos===i+1)?.id ?? S.members[i].id)?'selected':''}>${esc(x.team)} (${esc(x.name)})</option>`).join('')}</select>`).join('')}
         <div class="row"><button class="ghost" onclick="randomizeOrder()">Sortear</button><button class="ghost" onclick="saveOrder()">Guardar a mano</button><button onclick="startDraft()">Empezar draft</button></div>
       </div>` : ''}`;
-  $('#ft').onsubmit = async e => { e.preventDefault(); const t=new FormData(e.target).get('t').trim(); if(!t) return;
-    const { error } = await sb.from('league_members').update({ team_name:t }).eq('league_id', S.league.id).eq('user_id', S.user.id);
-    if(error) return fail(error); await refreshLeague(); render(); toast('Guardado'); };
 }
 function orderCard(){
   const set = S.members.every(m=>m.pos);
