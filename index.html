@@ -845,8 +845,11 @@ async function viewComm(){
   const pendingW = weeks.filter(w => ended(w) && !closed[w.week_no]);
   if(S.d5w == null) S.d5w = pendingW.length ? pendingW[0].week_no : Math.max(1, wk - 1);
   const W = weeks.find(w => w.week_no === S.d5w) || { week_no:S.d5w, ends_on:'9999' };
-  const { data } = await sb.from('drafteados_week').select('*').eq('season', SEASON).eq('week_no', S.d5w).maybeSingle();
+  const [{ data }, hs] = await Promise.all([
+    sb.from('drafteados_week').select('*').eq('season', SEASON).eq('week_no', S.d5w).maybeSingle(),
+    sb.rpc('hustle_status', { p_season:SEASON, p_week:S.d5w }) ]);
   if(S.view !== 'comi') return;
+  const missH = (hs.data || []).filter(d => d.game_date < today && !d.hustle_rows);
   const cur = data?.player_ids || [], C = closed[S.d5w], can = ended(W);
   const label = id => S.byId[id] ? S.byId[id].name + ' · ' + S.byId[id].team : '';
   const dm = d => new Date(d + 'T12:00').toLocaleDateString('es-ES', { weekday:'short', day:'numeric', month:'short' });
@@ -861,6 +864,7 @@ async function viewComm(){
       <label class="small muted">Jornada</label>
       <select id="d5w">${weeks.map(w=>`<option value="${w.week_no}" ${S.d5w===w.week_no?'selected':''}>Jornada ${w.week_no} · ${st(w)}</option>`).join('')}</select>
       <p class="small" style="margin:0 0 10px">${dm(W.starts_on||today)} – ${dm(W.ends_on==='9999'?today:W.ends_on)} · <b>${st(W)}</b>${C ? ' el ' + new Date(C.closed_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}</p>
+      ${missH.length ? `<p class="small" style="margin:0 0 10px;color:var(--bad)"><b>Faltan las estadísticas de esfuerzo (hustle)</b> de ${missH.map(d=>dm(d.game_date)).join(', ')}. Se descargan solas desde tu Mac (9:52 y 21:52) si está encendido con Claude abierto. Ábrelo y espera a la siguiente descarga, o pídeselo a Claude, antes de cerrar la jornada.</p>` : ''}
       ${can ? '' : `<p class="small muted" style="margin:0 0 10px">Esta jornada aún no ha terminado: podrás cerrarla a partir del lunes siguiente.</p>`}
       <datalist id="dl-d5">${S.players.map(p=>`<option value="${esc(p.name)} · ${p.team}">`).join('')}</datalist>
       ${[0,1,2,3,4].map(i=>`<label class="small muted">Jugador ${i+1}</label><input name="p${i}" list="dl-d5" value="${C && C.mode==='none' ? '' : esc(label(cur[i]))}" placeholder="Escribe y elige" ${can?'':'disabled'}>`).join('')}
