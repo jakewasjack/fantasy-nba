@@ -328,8 +328,8 @@ function renderDraft(){
         ${status==='en_curso'?`<button class="sm" ${canPick(p)?'':'disabled'} onclick="pick(${p.id})">${S.armed===p.id?'Confirmar':'Elegir'}</button>`:''}
       </li>`).join('') || '<li class="muted">Nadie con ese filtro</li>'}
     </ul>
-    <h2>Picks</h2>
-    <ol class="small" style="padding-left:22px">${S.picks.slice().reverse().map(p=>`<li value="${p.pick_no+1}"><b>${esc(S.byId[p.player_id]?.name)}</b> (${p.price_m}M) → ${esc(member(p.user_id).team)}</li>`).join('') || '<span class="muted">Todavía ninguno</span>'}</ol>`;
+    <h2 id="picks">Picks por rondas</h2>
+    ${roundsBoard()}`;
   $('#q').oninput = e => { S.q = e.target.value; const pos = e.target.selectionStart; renderDraft(); const i=$('#q'); i.focus(); i.setSelectionRange(pos,pos); };
   $('#team').onchange = e => { S.team = e.target.value; renderDraft(); };
   $('#rk').onchange = e => { S.onlyRookies = e.target.checked; renderDraft(); };
@@ -365,8 +365,15 @@ function lastPickCard(){
   if(!S.picks.length) return '';
   const pk = S.picks[S.picks.length-1], pl = S.byId[pk.player_id] || {};
   return `<div class="card" style="margin:10px 0;border-color:var(--accent)">
-    <div class="small muted">Pick ${pk.pick_no+1} · ronda ${Math.floor(pk.pick_no/S.members.length)+1}</div>
+    <div class="between"><span class="small muted">Pick ${pk.pick_no+1} · ronda ${Math.floor(pk.pick_no/S.members.length)+1}</span><a href="#picks" class="small" onclick="document.getElementById('picks').scrollIntoView({behavior:'smooth'});return false">Ver todas las rondas ↓</a></div>
     <div style="display:flex;align-items:center;gap:10px;margin-top:4px">${posBadge(pl.pos)}<div style="flex:1;min-width:0"><b>${esc(member(pk.user_id).team)}</b> elige a <b>${esc(pl.name||'')}</b><div class="small muted">${pl.team||''} · ${pk.price_m}M${pl.fp!=null?' · '+Number(pl.fp).toFixed(1)+' FPPG':''}${pl.rookie?' · rookie':''}</div></div></div></div>`;
+}
+// Todas las rondas, la más reciente arriba
+function roundsBoard(){
+  if(!S.picks.length) return '<p class="small muted">Todavía ninguno.</p>';
+  const n = S.members.length || 1, rounds = {};
+  S.picks.forEach(pk => (rounds[Math.floor(pk.pick_no/n)+1] = rounds[Math.floor(pk.pick_no/n)+1] || []).push(pk));
+  return Object.keys(rounds).map(Number).sort((a,b)=>b-a).map(r => `<div class="card" style="padding:6px 14px"><div class="small muted" style="margin:4px 0">Ronda ${r}</div><ul class="list">${rounds[r].map(pk => { const pl = S.byId[pk.player_id] || {}; return `<li style="padding:6px 0"><span class="small muted" style="min-width:22px">${pk.pick_no+1}</span>${posBadge(pl.pos,1)}<div class="grow"><div class="name" style="font-size:14px">${esc(pl.name||'')}</div><div class="small muted">${esc(member(pk.user_id).team)} · ${pk.price_m}M</div></div></li>`; }).join('')}</ul></div>`).join('');
 }
 async function pick(pid){
   const p = S.byId[pid];
