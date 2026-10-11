@@ -934,8 +934,13 @@ async function viewComm(){
       <p class="small muted" style="margin:8px 0 0">Cada jugador del quinteto suma +2 esa jornada a quien lo tenga alineado. Al cerrar se anuncia en el muro. Puedes corregirlo después si te equivocas.</p>
     </form>
     <h2>Liga</h2>
+    <form id="lname" class="card"><label class="small muted">Nombre de la liga</label><input name="n" value="${esc(S.league.name)}" maxlength="50" required>
+      <button style="width:100%">Cambiar nombre</button></form>
     <div class="card small"><p>Código de invitación: <code>${esc(S.league.invite_code)}</code></p>
       <p class="muted" style="margin:0">El orden y el arranque del draft están en la pestaña Liga mientras el draft esté pendiente.</p></div>`;
+  $('#lname').onsubmit = async e => { e.preventDefault(); const n = new FormData(e.target).get('n').trim();
+    const { error } = await sb.rpc('rename_league', { p_league:S.league.id, p_name:n });
+    if(error) return fail(error); await refreshLeague(); toast('Nombre de la liga cambiado'); render(); };
   $('#d5w').onchange = e => { S.d5w = +e.target.value; S.d5none = null; viewComm(); };
   $('#d5none').onclick = async () => {
     if(S.d5none !== S.d5w){ S.d5none = S.d5w; return viewComm(); }
