@@ -215,11 +215,15 @@ async function pollOnce(){
   S.pollBusy = true;
   try{
     const sig = () => S.picks.length + S.league.draft_status + S.members.map(m=>m.pos).join(',') + S.members.length;
-    const before = sig(), wasMine = S.state?.on_clock === S.user.id;
+    const before = sig(), wasMine = S.state?.on_clock === S.user.id, nBefore = S.picks.length;
     await refreshLeague();
+    let ann = '';
+    if(S.picks.length > nBefore){ const pk = S.picks[S.picks.length-1];
+      ann = `📣 ${member(pk.user_id).team} elige a ${S.byId[pk.player_id]?.name || 'un jugador'} (${pk.price_m}M)`; }
     const mine = S.league.draft_status === 'en_curso' && S.state?.on_clock === S.user.id;
     document.title = mine ? '🏀 ¡Te toca! · Fantasy NBA' : 'Fantasy NBA';
-    if(mine && !wasMine){ try{ navigator.vibrate && navigator.vibrate([200,100,200]); }catch(e){} toast('¡Te toca elegir!'); }
+    if(mine && !wasMine){ try{ navigator.vibrate && navigator.vibrate([200,100,200]); }catch(e){} toast((ann ? ann + ' · ' : '') + '¡Te toca elegir!'); }
+    else if(ann) toast(ann);
     if(before !== sig()){ if(isTyping()) S.pendingRender = true; else if(!S.view) render(); }
   } finally { S.pollBusy = false; }
 }
@@ -293,6 +297,7 @@ function renderDraft(){
   };
   $('#tab').innerHTML = `
     ${head}
+    ${lastPickCard()}
     ${whoName ? `<p class="small" style="margin:10px 0 0"><b>Eliges por ${esc(whoName)}</b> <span class="muted">· estos son sus números, no los tuyos</span></p>`:''}
     <div class="stats">
       <div class="stat"><b>${who.left}M</b><span>${whoName?'su presupuesto':'presupuesto'}</span></div>
@@ -354,6 +359,14 @@ function wishlistCard(taken){
       <button class="tg" onclick="wlMove(${id},-1)" ${i===0?'disabled':''} aria-label="Subir">▲</button>
       <button class="tg" onclick="wlMove(${id},1)" ${i===S.wl.length-1?'disabled':''} aria-label="Bajar">▼</button>
       <button class="tg" onclick="wlToggle(${id})" aria-label="Quitar">✕</button></li>`; }).join('')}</ul></details>`;
+}
+// Anuncio público del último pick (lo ven todos, se actualiza solo)
+function lastPickCard(){
+  if(!S.picks.length) return '';
+  const pk = S.picks[S.picks.length-1], pl = S.byId[pk.player_id] || {};
+  return `<div class="card" style="margin:10px 0;border-color:var(--accent)">
+    <div class="small muted">Pick ${pk.pick_no+1} · ronda ${Math.floor(pk.pick_no/S.members.length)+1}</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:4px">${posBadge(pl.pos)}<div style="flex:1;min-width:0"><b>${esc(member(pk.user_id).team)}</b> elige a <b>${esc(pl.name||'')}</b><div class="small muted">${pl.team||''} · ${pk.price_m}M${pl.fp!=null?' · '+Number(pl.fp).toFixed(1)+' FPPG':''}${pl.rookie?' · rookie':''}</div></div></div></div>`;
 }
 async function pick(pid){
   const p = S.byId[pid];
