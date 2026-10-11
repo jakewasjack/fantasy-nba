@@ -209,13 +209,23 @@ async function refreshLeague(){
     .sort((a,b)=>(a.pos??99)-(b.pos??99));
   S.picks = pk.data || []; S.state = st.data; if(lg.data) S.league = lg.data;
 }
-function startPoll(){ stopPoll(); S.poll = setInterval(async ()=>{
-  if(document.hidden || !S.league || S.league.draft_status === 'cerrado') return;
-  const sig = () => S.picks.length + S.league.draft_status + S.members.map(m=>m.pos).join(',') + S.members.length;
-  const before = sig();
-  await refreshLeague();
-  if(before !== sig() && !isTyping()) render();
-}, 4000); }
+// Draft en directo: consulta cada 3 s; al volver a la pestaña, al momento. Si estás escribiendo, espera a que sueltes el campo.
+async function pollOnce(){
+  if(document.hidden || !S.league || S.league.draft_status === 'cerrado' || S.pollBusy) return;
+  S.pollBusy = true;
+  try{
+    const sig = () => S.picks.length + S.league.draft_status + S.members.map(m=>m.pos).join(',') + S.members.length;
+    const before = sig(), wasMine = S.state?.on_clock === S.user.id;
+    await refreshLeague();
+    const mine = S.league.draft_status === 'en_curso' && S.state?.on_clock === S.user.id;
+    document.title = mine ? '🏀 ¡Te toca! · Fantasy NBA' : 'Fantasy NBA';
+    if(mine && !wasMine){ try{ navigator.vibrate && navigator.vibrate([200,100,200]); }catch(e){} toast('¡Te toca elegir!'); }
+    if(before !== sig()){ if(isTyping()) S.pendingRender = true; else if(!S.view) render(); }
+  } finally { S.pollBusy = false; }
+}
+function startPoll(){ stopPoll(); S.poll = setInterval(pollOnce, 3000); }
+document.addEventListener('visibilitychange', () => { if(!document.hidden && S.poll) pollOnce(); });
+document.addEventListener('focusout', () => setTimeout(() => { if(S.pendingRender && !isTyping()){ S.pendingRender = false; if(!S.view) render(); } }, 50));
 function stopPoll(){ if(S.poll) clearInterval(S.poll); S.poll = null; }
 const isTyping = () => document.activeElement && ['INPUT','SELECT'].includes(document.activeElement.tagName);
 const member = uid => S.members.find(m=>m.id===uid) || { team:'—', name:'—' };
