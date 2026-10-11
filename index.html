@@ -255,7 +255,8 @@ function renderDraft(){
   const actingFor = myTurn ? S.user.id : (isComm() && onClock ? onClock : null);
   const actor = actingFor ? myTeamInfo(actingFor) : null;
   let head = '';
-  if(status === 'pendiente') { $('#tab').innerHTML = `<div class="clock wait">El draft aún no ha empezado. ${isComm()?'Sortea o fija el orden y arráncalo cuando estéis todos.':'El comisionado lo abrirá.'}</div>` + orderCard(); return; }
+  if(S.wlLeague !== S.league.id){ S.wlLeague = S.league.id; S.wl = []; loadWishlist(); }
+  if(status === 'pendiente') head = `<div class="clock wait">El draft aún no ha empezado. ${isComm()?'Sortea o fija el orden y arráncalo cuando estéis todos.':'El comisionado lo abrirá.'} Mientras, haz tu scouting: marca con ☆ a los jugadores que te interesan y ordena tu lista.</div>` + orderCard();
   else if(status === 'cerrado') head = `<div class="clock wait">Draft terminado. ¡A por la temporada!</div>`;
   else head = `<div class="clock ${myTurn?'':'wait'}">${myTurn ? '¡Te toca!' : 'Elige ' + esc(member(onClock).team)} · pick ${st.next_pick+1} de ${st.total_picks} · ronda ${Math.floor(st.next_pick/S.members.length)+1}</div>`;
 
@@ -269,7 +270,9 @@ function renderDraft(){
     media: (a,b)=> (b.fp??-1)-(a.fp??-1) || b.price-a.price,
     barato: (a,b)=> a.price-b.price || (b.fp??-1)-(a.fp??-1)
   };
-  const all = S.players.filter(p => !taken.has(p.id) && (!q || p.name.toLowerCase().includes(q)) && (!S.team || p.team===S.team) && (!S.onlyRookies || p.rookie) && (!S.affordable || p.price <= maxPrice)).sort(sorters[S.sort] || sorters.valor);
+  const inWl = new Set(S.wl);
+  let all = S.players.filter(p => !taken.has(p.id) && (!S.onlyList || inWl.has(p.id)) && (!q || p.name.toLowerCase().includes(q)) && (!S.team || p.team===S.team) && (!S.onlyRookies || p.rookie) && (!S.affordable || p.price <= maxPrice)).sort(sorters[S.sort] || sorters.valor);
+  if(S.onlyList) all = S.wl.map(id => all.find(p => p.id === id)).filter(Boolean);
   const avail = all.slice(0, 100);
   const canPick = p => {
     if(!actor || status!=='en_curso') return false;
@@ -287,6 +290,7 @@ function renderDraft(){
       <div class="stat"><b>${who.hasRookie?'✓':'—'}</b><span>rookie</span></div>
     </div>
     <p class="small muted" style="margin:0 0 10px">${S.members.map(m=>{const t=myTeamInfo(m.id);return `${esc(m.team)} <b style="color:var(--text)">${t.left}M</b>`}).join(' · ')}</p>
+    ${wishlistCard(taken)}
     <div class="row">
       <input id="q" placeholder="Buscar jugador" value="${esc(S.q)}">
       <select id="team" style="max-width:110px"><option value="">Equipo</option>${TEAMS.map(t=>`<option ${S.team===t?'selected':''}>${t}</option>`).join('')}</select>
@@ -297,10 +301,12 @@ function renderDraft(){
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px">
       <label class="small muted"><input type="checkbox" id="af" ${S.affordable?'checked':''} style="width:auto;margin:0 6px 0 0">Solo los que ${whoName?'puede':'puedo'} pagar (≤ ${Math.max(maxPrice,0)}M)</label>
       <label class="small muted"><input type="checkbox" id="rk" ${S.onlyRookies?'checked':''} style="width:auto;margin:0 6px 0 0">Solo rookies</label>
+      <label class="small muted"><input type="checkbox" id="ol" ${S.onlyList?'checked':''} style="width:auto;margin:0 6px 0 0">Solo mi lista (${S.wl.filter(id=>!taken.has(id)).length})</label>
     </div>
     <p class="small muted" style="margin:0 0 4px">${all.length} jugadores${all.length>100?' · se muestran 100, afina con los filtros':''}</p>
     <ul class="list card" style="padding:0 14px">
       ${avail.map(p=>`<li>
+        <button class="tg ${inWl.has(p.id)?'on':''}" onclick="wlToggle(${p.id})" aria-label="${inWl.has(p.id)?'Quitar de mi lista':'Añadir a mi lista'}" style="min-width:34px">${inWl.has(p.id)?'★':'☆'}</button>
         <span class="price">${p.price}M</span>
         <div class="grow"><div class="name">${esc(p.name)}</div>
           <div class="small muted">${posBadge(p.pos,1)} ${p.team}${p.rookie?' · <span class="pill ok">rookie'+(p.pick?' #'+p.pick:'')+'</span>':''}${p.fp?' · '+Number(p.fp).toFixed(1)+' pts/p'+(p.rank?' <span class="muted">(#'+p.rank+')</span>':''):''}</div></div>
@@ -312,8 +318,32 @@ function renderDraft(){
   $('#q').oninput = e => { S.q = e.target.value; const pos = e.target.selectionStart; renderDraft(); const i=$('#q'); i.focus(); i.setSelectionRange(pos,pos); };
   $('#team').onchange = e => { S.team = e.target.value; renderDraft(); };
   $('#rk').onchange = e => { S.onlyRookies = e.target.checked; renderDraft(); };
+  $('#ol').onchange = e => { S.onlyList = e.target.checked; renderDraft(); };
   $('#af').onchange = e => { S.affordable = e.target.checked; renderDraft(); };
   $('#sort').onchange = e => { S.sort = e.target.value; renderDraft(); };
+}
+// ---------- Mi lista (scouting previo, privada) ----------
+async function loadWishlist(){
+  const { data } = await sb.from('draft_lists').select('player_ids').eq('league_id', S.league.id).eq('user_id', S.user.id).maybeSingle();
+  S.wl = (data?.player_ids || []).map(Number); if(S.tab === 'draft' && !S.view) renderDraft();
+}
+function wlSave(){ clearTimeout(S.wlT); S.wlT = setTimeout(async () => {
+  const { error } = await sb.from('draft_lists').upsert({ league_id:S.league.id, user_id:S.user.id, player_ids:S.wl, updated_at:new Date().toISOString() });
+  if(error) fail(error); }, 400); }
+function wlToggle(id){ S.wl = S.wl.includes(id) ? S.wl.filter(x=>x!==id) : S.wl.concat(id); wlSave(); renderDraft(); }
+function wlMove(id, d){ const i = S.wl.indexOf(id), j = i + d; if(j < 0 || j >= S.wl.length) return; [S.wl[i], S.wl[j]] = [S.wl[j], S.wl[i]]; wlSave(); renderDraft(); }
+function wishlistCard(taken){
+  if(!S.wl.length) return `<p class="small muted" style="margin:10px 0">Tu lista está vacía. Marca con ☆ a los jugadores que quieres; solo la ves tú.</p>`;
+  const by = {}; S.picks.forEach(p => by[p.player_id] = p.user_id);
+  const left = S.wl.filter(id => !taken.has(id)).length;
+  return `<details class="card" ${S.wlOpen?'open':''} ontoggle="S.wlOpen=this.open" style="padding:10px 14px">
+    <summary class="name" style="cursor:pointer">Mi lista · ${left} disponible${left===1?'':'s'} de ${S.wl.length} <span class="small muted">(solo la ves tú)</span></summary>
+    <ul class="list" style="margin-top:6px">${S.wl.map((id,i)=>{ const p = S.byId[id] || {}, gone = taken.has(id); return `<li style="padding:6px 0">
+      <span class="small muted" style="min-width:20px">${i+1}</span>${posBadge(p.pos,1)}
+      <div class="grow" style="${gone?'opacity:.45;text-decoration:line-through':''}"><div class="name" style="font-size:14px">${esc(p.name||'')}</div><div class="small muted">${p.team||''} · ${p.price}M${gone?' · se lo llevó '+esc(member(by[id]).team):''}</div></div>
+      <button class="tg" onclick="wlMove(${id},-1)" ${i===0?'disabled':''} aria-label="Subir">▲</button>
+      <button class="tg" onclick="wlMove(${id},1)" ${i===S.wl.length-1?'disabled':''} aria-label="Bajar">▼</button>
+      <button class="tg" onclick="wlToggle(${id})" aria-label="Quitar">✕</button></li>`; }).join('')}</ul></details>`;
 }
 async function pick(pid){
   const p = S.byId[pid];
