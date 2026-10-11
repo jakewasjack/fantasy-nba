@@ -296,7 +296,7 @@ function renderDraft(){
       <select id="team" style="max-width:110px"><option value="">Equipo</option>${TEAMS.map(t=>`<option ${S.team===t?'selected':''}>${t}</option>`).join('')}</select>
     </div>
     <div class="row">
-      <select id="sort" aria-label="Ordenar"><option value="valor" ${S.sort==='valor'?'selected':''}>Orden: valor (caros primero)</option><option value="media" ${S.sort==='media'?'selected':''}>Orden: media de puntos</option><option value="barato" ${S.sort==='barato'?'selected':''}>Orden: baratos primero</option></select>
+      <select id="sort" aria-label="Ordenar"><option value="valor" ${S.sort==='valor'?'selected':''}>Orden: valor (caros primero)</option><option value="media" ${S.sort==='media'?'selected':''}>Orden: FPPG (media fantasy)</option><option value="barato" ${S.sort==='barato'?'selected':''}>Orden: baratos primero</option></select>
     </div>
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px">
       <label class="small muted"><input type="checkbox" id="af" ${S.affordable?'checked':''} style="width:auto;margin:0 6px 0 0">Solo los que ${whoName?'puede':'puedo'} pagar (≤ ${Math.max(maxPrice,0)}M)</label>
@@ -309,7 +309,7 @@ function renderDraft(){
         <button class="tg ${inWl.has(p.id)?'on':''}" onclick="wlToggle(${p.id})" aria-label="${inWl.has(p.id)?'Quitar de mi lista':'Añadir a mi lista'}" style="min-width:34px">${inWl.has(p.id)?'★':'☆'}</button>
         <span class="price">${p.price}M</span>
         <div class="grow"><div class="name">${esc(p.name)}</div>
-          <div class="small muted">${posBadge(p.pos,1)} ${p.team}${p.rookie?' · <span class="pill ok">rookie'+(p.pick?' #'+p.pick:'')+'</span>':''}${p.fp?' · '+Number(p.fp).toFixed(1)+' pts/p'+(p.rank?' <span class="muted">(#'+p.rank+')</span>':''):''}</div></div>
+          <div class="small muted">${posBadge(p.pos,1)} ${p.team}${p.rookie?' · <span class="pill ok">rookie'+(p.pick?' #'+p.pick:'')+'</span>':''}${p.fp?' · '+Number(p.fp).toFixed(1)+' FPPG'+(p.rank?' <span class="muted">(#'+p.rank+')</span>':''):''}</div></div>
         ${status==='en_curso'?`<button class="sm" ${canPick(p)?'':'disabled'} onclick="pick(${p.id})">${S.armed===p.id?'Confirmar':'Elegir'}</button>`:''}
       </li>`).join('') || '<li class="muted">Nadie con ese filtro</li>'}
     </ul>
@@ -468,7 +468,7 @@ async function renderTeam(){
 function drawTeam(){
   const L = S.lu, T = S.td;
   const reqIn = id => T.mineLive.find(t => t.player_in === id);
-  const sub = id => { const pl = S.byId[id] || {}; return `${pl.team||''} · ${T.cost[id]}M${pl.fp!=null?' · '+Number(pl.fp).toFixed(1)+' pts/p':''}${pl.rookie?' · <span class="pill ok">rookie</span>':''}`; };
+  const sub = id => { const pl = S.byId[id] || {}; return `${pl.team||''} · ${T.cost[id]}M${pl.fp!=null?' · '+Number(pl.fp).toFixed(1)+' FPPG':''}${pl.rookie?' · <span class="pill ok">rookie</span>':''}`; };
   const tag = id => { const r = reqIn(id); return r ? ` <span class="pill ${r.status==='negotiating'?'accent':''}">${r.status==='negotiating'?'En negociación':r.agreed?'Fichaje acordado':'Fichaje pendiente'}</span>` : ''; };
   const strip = id => { if(L.open !== id) return ''; const r = reqIn(id);
     return `<li style="border-bottom:1px solid var(--line);padding:0 0 10px"><div class="row" style="width:100%">${r
@@ -586,7 +586,7 @@ function drawMarket(){
       <h2>¿Quién sale por ${pname(M.inn)}? <span class="small muted">· cuesta ${price(M.inn)}M</span></h2>
       <p class="small muted">Elige a quién sueltas. Arriba, los que te dan presupuesto suficiente.</p>
       <ul class="list card" style="padding:0 14px">${canOut.slice().sort((a,b)=>{ const oa = T.bal+(T.paid[a]||0)-price(M.inn)>=0, ob = T.bal+(T.paid[b]||0)-price(M.inn)>=0; return (ob-oa) || (S.byId[a]?.fp??-1)-(S.byId[b]?.fp??-1); }).map(id=>{ const ok = T.bal + (T.paid[id]||0) - price(M.inn) >= 0; return `<li>
-        <div class="grow"><div class="name">${pname(id)}</div><div class="small muted">${posBadge(posOf(id),1)} recuperas ${T.paid[id]}M${S.byId[id]?.fp!=null?' · '+Number(S.byId[id].fp).toFixed(1)+' pts/p':''}${ok?'':' · <span style="color:var(--bad)">te faltarían '+(price(M.inn)-T.bal-(T.paid[id]||0))+'M</span>'}</div></div>
+        <div class="grow"><div class="name">${pname(id)}</div><div class="small muted">${posBadge(posOf(id),1)} recuperas ${T.paid[id]}M${S.byId[id]?.fp!=null?' · '+Number(S.byId[id].fp).toFixed(1)+' FPPG':''}${ok?'':' · <span style="color:var(--bad)">te faltarían '+(price(M.inn)-T.bal-(T.paid[id]||0))+'M</span>'}</div></div>
         <button class="sm" ${ok?'':'disabled'} onclick="mkConfirm(${id},${M.inn})">${M.armed===id?'Confirmar':'Sale'}</button></li>`}).join('')}</ul>
       <button class="ghost" style="width:100%" onclick="mkReset()">Cancelar</button>` : `
     ${M.out ? `<div class="clock">Buscas sustituto para ${pname(M.out)} · recuperas ${T.paid[M.out]}M · puedes pagar hasta ${maxPrice}M <a href="#" onclick="mkReset();return false" style="color:inherit;margin-left:6px">Cancelar</a></div>` : ''}
@@ -594,7 +594,7 @@ function drawMarket(){
     <div class="row"><input id="mq" placeholder="Buscar jugador" value="${esc(M.q)}">
       <select id="mteam" style="max-width:104px"><option value="">Equipo</option>${TEAMS.map(t=>`<option ${M.team===t?'selected':''}>${t}</option>`).join('')}</select></div>
     <div class="row">
-      <select id="msort" aria-label="Ordenar"><option value="media" ${M.sort==='media'?'selected':''}>Orden: media de puntos</option><option value="partidos" ${M.sort==='partidos'?'selected':''}>Orden: partidos esta jornada</option><option value="valor" ${M.sort==='valor'?'selected':''}>Orden: caros primero</option><option value="barato" ${M.sort==='barato'?'selected':''}>Orden: baratos primero</option></select>
+      <select id="msort" aria-label="Ordenar"><option value="media" ${M.sort==='media'?'selected':''}>Orden: FPPG (media fantasy)</option><option value="partidos" ${M.sort==='partidos'?'selected':''}>Orden: partidos esta jornada</option><option value="valor" ${M.sort==='valor'?'selected':''}>Orden: caros primero</option><option value="barato" ${M.sort==='barato'?'selected':''}>Orden: baratos primero</option></select>
       <select id="mpos" aria-label="Posición" style="max-width:130px"><option value="">Posición</option><option value="G" ${M.pos==='G'?'selected':''}>Exterior (G)</option><option value="F" ${M.pos==='F'?'selected':''}>Alero (F)</option><option value="C" ${M.pos==='C'?'selected':''}>Pívot (C)</option></select>
     </div>
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px">
@@ -607,7 +607,7 @@ function drawMarket(){
         return `<li>
         <span class="price">${p.price}M</span>
         <div class="grow"><div class="name">${esc(p.name)}</div>
-          <div class="small muted">${posBadge(p.pos,1)} ${p.team}${p.fp!=null?' · '+Number(p.fp).toFixed(1)+' pts/p':''}${p.rookie?' · <span class="pill ok">rookie</span>':''} · ${g?g.n+' part.':'sin partidos'}</div>
+          <div class="small muted">${posBadge(p.pos,1)} ${p.team}${p.fp!=null?' · '+Number(p.fp).toFixed(1)+' FPPG':''}${p.rookie?' · <span class="pill ok">rookie</span>':''} · ${g?g.n+' part.':'sin partidos'}</div>
           ${others.length ? `<div class="small" style="color:var(--accent)">En disputa entre ${others.map(t=>esc(member(t.user_id).team)).join(' y ')} · <a href="#" onclick="openRoom(${p.id});return false" style="color:inherit">ver la mesa</a></div>` : ''}
           ${rsv ? `<div class="small" style="color:${blocked?'var(--bad)':'var(--ok)'}">${blocked ? 'Reservado esta jornada para ' + esc(member(rsv).team) : 'Reservado para ti esta jornada'}</div>` : ''}</div>
         <button class="sm" ${blocked || p.price > maxPrice ? 'disabled' : ''} onclick="mkPick(${p.id})">${M.out && M.armed===p.id ? 'Confirmar' : 'Fichar'}</button>
@@ -840,6 +840,7 @@ function viewRules(){
       ${row('Carga recibida','+3')}${row('Desvío','+1,5')}${row('Balón suelto recuperado','+1,5')}${row('Tiro contestado','+0,5')}
       ${row('Impacto: +/− del partido × (minutos ÷ 36)','máx. ±8')}
     </ul></div>
+    <p class="small muted"><b style="color:var(--text)">FPPG</b> (fantasy points per game): media de puntos fantasy por partido de la temporada pasada, calculada con esta tabla. Si un jugador jugó pocos partidos se mezcla con la temporada anterior. Los rookies no tienen FPPG.</p>
     <h2>Tu equipo</h2>
     <div class="card small">
       <p><b>Plantilla de 10</b>, con al menos un rookie. Cada jugador solo puede estar en un equipo de la liga.</p>
