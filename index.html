@@ -928,7 +928,7 @@ async function viewComm(){
     if(error) return fail(error); toast('Quinteto guardado · jornada ' + S.d5w + ' cerrada'); viewComm(); };
 }
 
-// ---------- Muro (pique) ----------
+// ---------- Muro (Trash Talk) ----------
 function postHTML(p){
   const when = new Date(p.created_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}), d = p.data || {};
   const team = uid => esc(member(uid).team);
@@ -990,7 +990,7 @@ async function renderHome(){
       <button class="sm ${lineupSaved?'ghost':''}" style="${lineupSaved?'':'background:var(--accent-ink);color:var(--accent)'}" onclick="S.tab='equipo';render()">${lineupSaved ? 'Revisar' : 'Alinear'}</button></div>
     </div>` : '<div class="clock wait" style="margin-top:12px">Temporada terminada.</div>'}
     ${predOpen && preds < 6 ? `<div class="card between"><div><div class="name">Pedradas de temporada</div><div class="small muted">Llevas ${preds} de 6 · 3 puntos por acierto</div></div><button class="sm" onclick="S.tab='pred';render()">Completar</button></div>` : ''}
-    <h2>Pique</h2>
+    <h2>Trash Talk</h2>
     <div class="card" style="padding:10px 14px">
       <form id="wform" class="row"><input id="wmsg" maxlength="280" placeholder="Suelta algo a la liga…" value="${esc(draftMsg)}" style="margin:0"><button class="sm" style="flex:0 0 auto">Enviar</button></form>
       <ul class="list" style="margin-top:6px">${shown.map(postHTML).join('') || '<li class="muted">El muro está vacío. Alguien tiene que tirar la primera piedra.</li>'}</ul>
