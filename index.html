@@ -266,7 +266,10 @@ function renderDraft(){
   const me = myTeamInfo();
   const taken = new Set(S.picks.map(p=>p.player_id));
   const onClock = st.on_clock; const myTurn = onClock === S.user.id;
-  const actingFor = myTurn ? S.user.id : (isComm() && onClock ? onClock : null);
+  // El comisionado solo elige por otro si lo activa expresamente para ese turno
+  const canActFor = !myTurn && isComm() && onClock && status === 'en_curso';
+  if(S.actFor && (S.actFor !== onClock || myTurn)) S.actFor = null;
+  const actingFor = myTurn ? S.user.id : (canActFor && S.actFor === onClock ? onClock : null);
   const actor = actingFor ? myTeamInfo(actingFor) : null;
   let head = '';
   if(S.wlLeague !== S.league.id){ S.wlLeague = S.league.id; S.wl = []; loadWishlist(); }
@@ -298,7 +301,8 @@ function renderDraft(){
   $('#tab').innerHTML = `
     ${head}
     ${lastPickCard()}
-    ${whoName ? `<p class="small" style="margin:10px 0 0"><b>Eliges por ${esc(whoName)}</b> <span class="muted">· estos son sus números, no los tuyos</span></p>`:''}
+    ${whoName ? `<p class="small" style="margin:10px 0 0"><b>Modo comisionado: eliges por ${esc(whoName)}</b> <span class="muted">· estos son sus números, no los tuyos</span> <a href="#" onclick="S.actFor=null;S.armed=null;renderDraft();return false">Salir</a></p>`
+      : canActFor ? `<p class="small muted" style="margin:10px 0 0">No es tu turno. Como comisionado puedes <a href="#" onclick="S.actFor='${onClock}';renderDraft();return false">elegir por ${esc(member(onClock).team)}</a> si te lo pide.</p>` : ''}
     <div class="stats">
       <div class="stat"><b>${who.left}M</b><span>${whoName?'su presupuesto':'presupuesto'}</span></div>
       <div class="stat"><b>${who.slots}</b><span>huecos</span></div>
