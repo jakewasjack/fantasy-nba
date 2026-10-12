@@ -554,7 +554,7 @@ function drawTeam(){
         <button class="tg" onclick="luStart(${id})" aria-label="Hacer titular" style="padding:8px 10px">Titular</button></div>
       </li>${strip(id)}`; }).join('') || '<li class="muted">Banquillo vacío</li>'}
     </ul>
-    <p class="small muted">Si un titular no juega en toda la semana, entra el primer suplente que comparta su posición (los de dos colores valen para ambas). Si no hay ninguno, ese hueco no puntúa. Por el sexto hombre entra el primero disponible, sea de la posición que sea.</p>
+    <p class="small muted">Si un titular no juega en toda la semana, entra el primer suplente que comparta su posición (los de dos colores valen para ambas). Si no hay ninguno, ese hueco no puntúa. Por el sexto hombre entra el primero disponible, sea de la posición que sea. Va por tu orden, pero si un híbrido hace falta para cubrir un hueco que nadie más puede cubrir, pasa por delante.</p>
     <p class="small muted">Toca el nombre de un jugador para cambiarlo por un agente libre.</p>
     ${T.week ? `<button style="width:100%;margin-top:8px" onclick="luSave()" ${ready && L.dirty ? '' : 'disabled'}>${L.dirty ? 'Guardar alineación' : 'Alineación guardada'}</button>
       ${ready ? '' : '<p class="small muted">Para guardar necesitas 5 titulares válidos, capitán y vicecapitán.</p>'}` : ''}
@@ -895,6 +895,7 @@ function viewRules(){
       <p><b>Sexto hombre:</b> lo eliges cada semana y puntúa siempre al 100%, sea de la posición que sea.</p>
       <p><b>Capitán ×2</b> (uno de los cinco titulares). Si no juega ningún partido en la semana, el doble pasa al vicecapitán. Si tampoco juega, esa semana no hay doble.</p>
       <p><b>Banquillo (4):</b> no puntúa, salvo que entre por alguien que no juegue <b>ningún partido en toda la semana</b>. Entran en el orden que tú pongas. Por un titular solo puede entrar un suplente que <b>comparta su posición</b> (los híbridos, como F-C, valen para ambas). Si no tienes ninguno, ese hueco no puntúa. Por el sexto hombre entra el primero disponible, sea de la posición que sea. Cada suplente cubre un solo hueco.</p>
+      <p><b>Los híbridos te ayudan:</b> el banquillo va por tu orden, pero si un híbrido hace falta para cubrir un hueco que nadie más puede cubrir, pasa por delante. Ejemplo: te faltan un alero y un pívot, y tu banquillo es 1º un F-C y 2º un F puro. El F-C cubre al pívot y el F puro al alero; se cubren los dos.</p>
       <p><b>Jornadas semanales.</b> La alineación se cierra 1 hora antes del primer partido de la jornada y hasta entonces nadie ve la tuya. Los puntos se actualizan cada día.</p>
     </div>
     <h2>Clasificación</h2>
