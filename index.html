@@ -532,17 +532,29 @@ function drawTeam(){
       ${L.starters.length < 5 ? `<li class="muted">Te ${5-L.starters.length===1?'falta 1 titular':'faltan '+(5-L.starters.length)+' titulares'}: súbelo${5-L.starters.length===1?'':'s'} desde el banquillo.</li>` : ''}
     </ul>
     ${L.starters.length === 5 && !pOk ? `<p class="small" style="color:var(--bad)"><b>Quinteto no válido.</b> Necesitas al menos un exterior (G) y un alero (F), y como mucho dos pívots puros (C).</p>` : `<p class="small muted">Posiciones: ${posBadge('G',1)} exterior, ${posBadge('F',1)} alero, ${posBadge('C',1)} pívot; los de dos colores (${posBadge('F-C',1)}) valen para ambas. Mínimo un exterior y un alero, máximo dos pívots puros. El capitán puntúa doble; si no juega, el doble pasa al vicecapitán.</p>`}
-    <h2>Banquillo <span class="small muted">· entra por este orden si un titular no juega</span></h2>
-    <ul class="list card" style="padding:0 14px">
-      ${L.bench.map((id,i)=>`<li style="${L.open===id?'border-bottom:0':''}">
-        <span class="pill">${i+6}º</span>
+    <h2>Sexto hombre <span class="small muted">· puntúa siempre, sea de la posición que sea</span></h2>
+    <ul class="list card" style="padding:0 14px;border-color:var(--accent)">
+      ${L.bench.slice(0,1).map(id=>`<li style="${L.open===id?'border-bottom:0':''}">
+        <span class="pill accent">6º</span>
         ${posBadge(posOf(id), true)}
         <div class="grow"><button class="lnk name" onclick="luOpen(${id})">${pname(id)}${tag(id)}</button><div class="small muted">${sub(id)}</div>${gamesLine(T,id)}</div>
-        <button class="tg" onclick="luMove(${id},-1)" ${i===0?'disabled':''} aria-label="Subir prioridad">▲</button>
-        <button class="tg" onclick="luMove(${id},1)" ${i===L.bench.length-1?'disabled':''} aria-label="Bajar prioridad">▼</button>
         <button class="tg" onclick="luStart(${id})" aria-label="Hacer titular">↑</button>
-      </li>${strip(id)}`).join('') || '<li class="muted">Banquillo vacío</li>'}
+      </li>${strip(id)}`).join('') || '<li class="muted">Elige un sexto hombre desde el banquillo (botón Sexto)</li>'}
     </ul>
+    <h2>Banquillo <span class="small muted">· entra por este orden si un titular o el sexto no juega en toda la semana</span></h2>
+    <ul class="list card" style="padding:0 14px">
+      ${L.bench.slice(1).map((id,j)=>{ const i = j+1; return `<li style="flex-wrap:wrap;${L.open===id?'border-bottom:0':''}">
+        <span class="pill">${j+1}º</span>
+        ${posBadge(posOf(id), true)}
+        <div class="grow"><button class="lnk name" onclick="luOpen(${id})">${pname(id)}${tag(id)}</button><div class="small muted">${sub(id)}</div>${gamesLine(T,id)}</div>
+        <div style="width:100%;display:flex;gap:6px;justify-content:flex-end">
+        <button class="tg" onclick="luMove(${id},-1)" ${i===1?'disabled':''} aria-label="Subir prioridad">▲</button>
+        <button class="tg" onclick="luMove(${id},1)" ${i===L.bench.length-1?'disabled':''} aria-label="Bajar prioridad">▼</button>
+        <button class="tg" onclick="luSixth(${id})" aria-label="Hacer sexto hombre" style="padding:8px 10px">Sexto</button>
+        <button class="tg" onclick="luStart(${id})" aria-label="Hacer titular" style="padding:8px 10px">Titular</button></div>
+      </li>${strip(id)}`; }).join('') || '<li class="muted">Banquillo vacío</li>'}
+    </ul>
+    <p class="small muted">Si un titular no juega en toda la semana, entra el primer suplente que comparta su posición (los de dos colores valen para ambas). Si no hay ninguno, ese hueco no puntúa. Por el sexto hombre entra el primero disponible, sea de la posición que sea.</p>
     <p class="small muted">Toca el nombre de un jugador para cambiarlo por un agente libre.</p>
     ${T.week ? `<button style="width:100%;margin-top:8px" onclick="luSave()" ${ready && L.dirty ? '' : 'disabled'}>${L.dirty ? 'Guardar alineación' : 'Alineación guardada'}</button>
       ${ready ? '' : '<p class="small muted">Para guardar necesitas 5 titulares válidos, capitán y vicecapitán.</p>'}` : ''}
@@ -552,7 +564,7 @@ function luTouch(){ S.lu.dirty = true; drawTeam(); }
 function luOpen(id){ S.lu.open = S.lu.open === id ? null : id; drawTeam(); }
 function luCap(id){ const L=S.lu; if(L.vc===id) L.vc = L.c; L.c = id; luTouch(); }
 function luVice(id){ const L=S.lu; if(L.c===id) L.c = L.vc; L.vc = id; luTouch(); }
-function luBench(id){ const L=S.lu; L.starters = L.starters.filter(x=>x!==id); L.bench.unshift(id); if(L.c===id) L.c=null; if(L.vc===id) L.vc=null; luTouch(); }
+function luBench(id){ const L=S.lu; L.starters = L.starters.filter(x=>x!==id); L.bench.splice(L.bench.length ? 1 : 0, 0, id); if(L.c===id) L.c=null; if(L.vc===id) L.vc=null; luTouch(); }
 function luStart(id){ const L=S.lu;
   if(L.starters.length < 5){ L.bench = L.bench.filter(x=>x!==id); L.starters.push(id); return luTouch(); }
   L.pending = id; drawTeam(); }
@@ -562,7 +574,8 @@ function luSwap(out){ const L=S.lu, inn=L.pending; if(!inn) return;
   if(L.c===out) L.c = inn; if(L.vc===out) L.vc = inn;
   L.pending = null; luTouch(); }
 function luCancel(){ S.lu.pending = null; drawTeam(); }
-function luMove(id, d){ const b=S.lu.bench, i=b.indexOf(id), j=i+d; if(j<0||j>=b.length) return; [b[i],b[j]]=[b[j],b[i]]; luTouch(); }
+function luSixth(id){ const b=S.lu.bench, i=b.indexOf(id); if(i<1) return; b.splice(i,1); b.unshift(id); luTouch(); }
+function luMove(id, d){ const b=S.lu.bench, i=b.indexOf(id), j=i+d; if(j<1||j>=b.length) return; [b[i],b[j]]=[b[j],b[i]]; luTouch(); }
 async function luSave(){ const L=S.lu;
   const { data, error } = await sb.rpc('save_lineup', { p_league:S.league.id, p_starters:L.starters, p_bench:L.bench, p_captain:L.c, p_vice:L.vc });
   if(error) return fail(error);
@@ -879,8 +892,9 @@ function viewRules(){
     <div class="card small">
       <p><b>Plantilla de 10</b>, con al menos un rookie. Cada jugador solo puede estar en un equipo de la liga.</p>
       <p><b>Quinteto titular:</b> puntúan al 100%. Mínimo un exterior (G) y un alero (F), máximo dos pívots (C).</p>
-      <p><b>Capitán ×2.</b> Si no juega, el doble pasa al vicecapitán. Si tampoco juega, ese día no hay doble.</p>
-      <p><b>Banquillo:</b> solo puntúa quien entra por un titular que no juega, en el orden que tú pongas.</p>
+      <p><b>Sexto hombre:</b> lo eliges cada semana y puntúa siempre al 100%, sea de la posición que sea.</p>
+      <p><b>Capitán ×2</b> (uno de los cinco titulares). Si no juega ningún partido en la semana, el doble pasa al vicecapitán. Si tampoco juega, esa semana no hay doble.</p>
+      <p><b>Banquillo (4):</b> no puntúa, salvo que entre por alguien que no juegue <b>ningún partido en toda la semana</b>. Entran en el orden que tú pongas. Por un titular solo puede entrar un suplente que <b>comparta su posición</b> (los híbridos, como F-C, valen para ambas). Si no tienes ninguno, ese hueco no puntúa. Por el sexto hombre entra el primero disponible, sea de la posición que sea. Cada suplente cubre un solo hueco.</p>
       <p><b>Jornadas semanales.</b> La alineación se cierra 1 hora antes del primer partido de la jornada y hasta entonces nadie ve la tuya. Los puntos se actualizan cada día.</p>
     </div>
     <h2>Clasificación</h2>
