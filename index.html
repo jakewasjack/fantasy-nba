@@ -76,6 +76,7 @@ button:disabled{opacity:.35;cursor:not-allowed}
 .rx button{background:var(--surface2);color:var(--text);border:1px solid var(--line);border-radius:99px;padding:3px 9px;font-size:13px;font-weight:500;line-height:1.3}
 .rx button.on{border-color:var(--accent);background:rgba(242,140,40,.15)}
 .rx button.add{color:var(--muted)}
+.savebar{position:fixed;left:0;right:0;bottom:0;z-index:15;display:flex;gap:12px;align-items:center;max-width:720px;margin:0 auto;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:var(--surface);border-top:2px solid var(--accent)}
 code{background:var(--surface2);padding:2px 6px;border-radius:6px;font-size:14px}
 </style>
 </head>
@@ -261,7 +262,7 @@ function render(){
       <div><div class="small muted">${esc(S.league.name)}</div><div class="name" style="font-size:18px">${esc(member(S.user.id).team)}</div></div>
       <button onclick="openView('perfil')" aria-label="Perfil y ajustes" style="background:none;padding:0;border-radius:50%">${avatar(S.user.id, 40)}</button>
     </div>
-    <nav class="tabs">${tabs.map(([k,t])=>`<button class="${S.tab===k?'on':''}" onclick="S.tab='${k}';render()">${t}</button>`).join('')}</nav>
+    <nav class="tabs">${tabs.map(([k,t])=>`<button class="${S.tab===k?'on':''}" onclick="goTab('${k}')">${t}</button>`).join('')}</nav>
     <main id="tab"></main>`;
   ({ draft:renderDraft, hoy:renderHome, equipo:renderTeam, mercado:renderMarket, pred:renderPred, liga:renderLiga })[S.tab]();
 }
@@ -517,7 +518,7 @@ function drawTeam(){
       ? `${r.status==='negotiating' || r.agreed ? `<button class="sm" onclick="openRoom(${id})">Sala de negociación</button>` : ''}${r.agreed ? '' : `<button class="sm ghost" onclick="mkCancel('${r.id}')">Cancelar fichaje (vuelve ${pname(r.player_out)})</button>`}`
       : `<button class="sm" onclick="startSwap(${id})">Cambiar por un agente libre</button>`}</div></li>`; };
   const pOk = posOk(L.starters);
-  const ready = L.starters.length === 5 && L.c && L.vc && L.c !== L.vc && pOk;
+  const ready = luReady();
   const status = !T.week ? '' : L.dirty ? (L.saved ? 'Cambios sin guardar' : 'Propuesta sin guardar') : 'Guardada';
   const tot = L.starters.reduce((a,id)=>a+(T.games[S.byId[id]?.team]?.n||0),0);
   $('#tab').innerHTML = `
@@ -566,8 +567,20 @@ function drawTeam(){
     <p class="small muted">Toca el nombre de un jugador para cambiarlo por un agente libre.</p>
     ${T.week ? `<button style="width:100%;margin-top:8px" onclick="luSave()" ${ready && L.dirty ? '' : 'disabled'}>${L.dirty ? 'Guardar alineación' : 'Alineación guardada'}</button>
       ${ready ? '' : '<p class="small muted">Para guardar necesitas 5 titulares válidos, capitán y vicecapitán.</p>'}` : ''}
-    <p class="small muted" style="margin-top:14px">Saldo: ${T.bal}M${T.sanc ? ' · sanciones ' + T.sanc + 'M' : ''}${T.adj ? ' · acuerdos ' + (T.adj>0?'+':'') + T.adj + 'M' : ''}${T.mineLive.length ? ' · contando ' + T.mineLive.length + (T.mineLive.length===1?' fichaje pendiente':' fichajes pendientes') : ''}.</p>`;
+    <p class="small muted" style="margin-top:14px">Saldo: ${T.bal}M${T.sanc ? ' · sanciones ' + T.sanc + 'M' : ''}${T.adj ? ' · acuerdos ' + (T.adj>0?'+':'') + T.adj + 'M' : ''}${T.mineLive.length ? ' · contando ' + T.mineLive.length + (T.mineLive.length===1?' fichaje pendiente':' fichajes pendientes') : ''}.</p>
+    ${T.week && L.dirty ? `<div style="height:76px"></div><div class="savebar"><div class="small" style="flex:1"><b>Cambios sin guardar</b><div class="muted">${ready ? 'Se guardan también al cambiar de pestaña' : 'Necesitas 5 titulares válidos, capitán y vice'}</div></div><button onclick="luSave()" ${ready?'':'disabled'}>Guardar</button></div>` : ''}`;
 }
+function luReady(){ const L = S.lu; return !!(L && L.starters.length === 5 && L.c && L.vc && L.c !== L.vc && posOk(L.starters) && L.bench.length >= 1); }
+// Al salir de Mi equipo con cambios: si la alineación es válida se guarda sola; si no, se avisa
+async function goTab(k){
+  const L = S.lu;
+  if(S.tab === 'equipo' && k !== 'equipo' && L && L.dirty && S.td && S.td.week){
+    if(luReady()){ if(!await luSave()) return; }
+    else if(S.leaveWarn !== k){ S.leaveWarn = k; toast('Tu alineación tiene cambios sin guardar y aún no es válida (5 titulares, capitán y vice). Pulsa otra vez la pestaña para salir sin guardar.'); return; }
+  }
+  S.leaveWarn = null; S.tab = k; render();
+}
+window.addEventListener('beforeunload', e => { if(S.lu && S.lu.dirty && S.tab === 'equipo'){ e.preventDefault(); e.returnValue = ''; } });
 function luTouch(){ S.lu.dirty = true; drawTeam(); }
 function luOpen(id){ S.lu.open = S.lu.open === id ? null : id; drawTeam(); }
 function luCap(id){ const L=S.lu; if(L.vc===id) L.vc = L.c; L.c = id; luTouch(); }
@@ -586,9 +599,10 @@ function luSixth(id){ const b=S.lu.bench, i=b.indexOf(id); if(i<1) return; b.spl
 function luMove(id, d){ const b=S.lu.bench, i=b.indexOf(id), j=i+d; if(j<1||j>=b.length) return; [b[i],b[j]]=[b[j],b[i]]; luTouch(); }
 async function luSave(){ const L=S.lu;
   const { data, error } = await sb.rpc('save_lineup', { p_league:S.league.id, p_starters:L.starters, p_bench:L.bench, p_captain:L.c, p_vice:L.vc });
-  if(error) return fail(error);
+  if(error){ fail(error); return false; }
   L.saved = true; L.dirty = false; if(S.td) S.td.lineup = { starters:[...L.starters], bench_order:[...L.bench], captain_id:L.c, vice_captain_id:L.vc };
-  drawTeam(); toast('Alineación guardada para la jornada ' + data);
+  if(S.tab === 'equipo') drawTeam(); toast('Alineación guardada para la jornada ' + data);
+  return true;
 }
 function startSwap(id){ S.mk = { ...(S.mk||{}), out:id, inn:null, armed:null }; S.room = null; S.tab = 'mercado'; render(); window.scrollTo(0,0); }
 
