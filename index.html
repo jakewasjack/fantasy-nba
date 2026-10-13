@@ -294,7 +294,7 @@ function renderDraft(){
     barato: (a,b)=> a.price-b.price || (b.fp??-1)-(a.fp??-1)
   };
   const inWl = new Set(S.wl);
-  let all = S.players.filter(p => !taken.has(p.id) && (!S.onlyList || inWl.has(p.id)) && (!q || p.name.toLowerCase().includes(q)) && (!S.team || p.team===S.team) && (!S.onlyRookies || p.rookie) && (!S.affordable || p.price <= maxPrice)).sort(sorters[S.sort] || sorters.valor);
+  let all = S.players.filter(p => !taken.has(p.id) && (!S.onlyList || inWl.has(p.id)) && (!q || p.name.toLowerCase().includes(q)) && (!S.team || p.team===S.team) && (!S.pos || (p.pos||'G-F').includes(S.pos)) && (!S.onlyRookies || p.rookie) && (!S.affordable || p.price <= maxPrice)).sort(sorters[S.sort] || sorters.valor);
   if(S.onlyList) all = S.wl.map(id => all.find(p => p.id === id)).filter(Boolean);
   const avail = all.slice(0, 100);
   const canPick = p => {
@@ -321,6 +321,7 @@ function renderDraft(){
       <select id="team" style="max-width:110px"><option value="">Equipo</option>${TEAMS.map(t=>`<option ${S.team===t?'selected':''}>${t}</option>`).join('')}</select>
     </div>
     <div class="row">
+      <select id="dpos" aria-label="Posición" style="max-width:130px"><option value="">Posición</option><option value="G" ${S.pos==='G'?'selected':''}>Exterior (G)</option><option value="F" ${S.pos==='F'?'selected':''}>Alero (F)</option><option value="C" ${S.pos==='C'?'selected':''}>Pívot (C)</option></select>
       <select id="sort" aria-label="Ordenar"><option value="valor" ${S.sort==='valor'?'selected':''}>Orden: valor (caros primero)</option><option value="media" ${S.sort==='media'?'selected':''}>Orden: FPPG (media fantasy)</option><option value="barato" ${S.sort==='barato'?'selected':''}>Orden: baratos primero</option></select>
     </div>
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px">
@@ -344,6 +345,7 @@ function renderDraft(){
   $('#team').onchange = e => { S.team = e.target.value; renderDraft(); };
   $('#rk').onchange = e => { S.onlyRookies = e.target.checked; renderDraft(); };
   $('#ol').onchange = e => { S.onlyList = e.target.checked; renderDraft(); };
+  $('#dpos').onchange = e => { S.pos = e.target.value; renderDraft(); };
   $('#af').onchange = e => { S.affordable = e.target.checked; renderDraft(); };
   $('#sort').onchange = e => { S.sort = e.target.value; renderDraft(); };
 }
@@ -613,7 +615,7 @@ function drawMarket(){
   const sorters = { media:(a,b)=>(b.fp??-1)-(a.fp??-1)||b.price-a.price, valor:(a,b)=>b.price-a.price||(b.fp??-1)-(a.fp??-1), barato:(a,b)=>a.price-b.price||(b.fp??-1)-(a.fp??-1),
     partidos:(a,b)=>(T.games[b.team]?.n||0)-(T.games[a.team]?.n||0)||(b.fp??-1)-(a.fp??-1) };
   const all = S.players.filter(p => !T.owner[p.id] && !T.ins.has(p.id) && (!q || p.name.toLowerCase().includes(q)) && (!M.team || p.team===M.team)
-      && (!M.pos || (p.pos||'').includes(M.pos)) && (!M.rookies || p.rookie) && (!M.affordable || p.price <= maxPrice)).sort(sorters[M.sort]);
+      && (!M.pos || (p.pos||'G-F').includes(M.pos)) && (!M.rookies || p.rookie) && (!M.affordable || p.price <= maxPrice)).sort(sorters[M.sort]);
   const list = all.slice(0, 80);
   const stLabel = { pending:'Pendiente', negotiating:'En negociación', confirmed:'Confirmado', frozen:'Congelado · −3M', withdrawn:'Retirado' };
   const mineAll = T.reqs.filter(t => t.user_id === me && t.status !== 'withdrawn');
