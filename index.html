@@ -71,6 +71,11 @@ button:disabled{opacity:.35;cursor:not-allowed}
 .req{font-size:12px;padding:3px 9px;border-radius:99px;border:1px solid var(--line);background:var(--surface2);color:var(--muted);display:inline-flex;gap:6px;align-items:center}
 .req.ok{color:var(--text);border-color:var(--ok)} .req.ko{color:var(--bad);border-color:var(--bad)}
 .req b{display:inline-block;width:9px;height:9px;border-radius:50%}
+/* Reacciones */
+.rx{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.rx button{background:var(--surface2);color:var(--text);border:1px solid var(--line);border-radius:99px;padding:3px 9px;font-size:13px;font-weight:500;line-height:1.3}
+.rx button.on{border-color:var(--accent);background:rgba(242,140,40,.15)}
+.rx button.add{color:var(--muted)}
 code{background:var(--surface2);padding:2px 6px;border-radius:6px;font-size:14px}
 </style>
 </head>
@@ -208,13 +213,14 @@ async function refreshLeague(){
   S.members = m.data.map(x=>({ id:x.user_id, team:x.team_name, pos:x.draft_position, name:x.profiles?.display_name || '—', avatar:x.profiles?.avatar_url || '' }))
     .sort((a,b)=>(a.pos??99)-(b.pos??99));
   S.picks = pk.data || []; S.state = st.data; if(lg.data) S.league = lg.data;
+  if(S.league.draft_status !== 'pendiente') await loadRx();
 }
 // Draft en directo: consulta cada 3 s; al volver a la pestaña, al momento. Si estás escribiendo, espera a que sueltes el campo.
 async function pollOnce(){
   if(document.hidden || !S.league || S.league.draft_status === 'cerrado' || S.pollBusy) return;
   S.pollBusy = true;
   try{
-    const sig = () => S.picks.length + S.league.draft_status + S.members.map(m=>m.pos).join(',') + S.members.length;
+    const sig = () => S.picks.length + S.league.draft_status + S.members.map(m=>m.pos).join(',') + S.members.length + (S.rxSig || '');
     const before = sig(), wasMine = S.state?.on_clock === S.user.id, nBefore = S.picks.length;
     await refreshLeague();
     let ann = '';
@@ -370,14 +376,14 @@ function lastPickCard(){
   const pk = S.picks[S.picks.length-1], pl = S.byId[pk.player_id] || {};
   return `<div class="card" style="margin:10px 0;border-color:var(--accent)">
     <div class="between"><span class="small muted">Pick ${pk.pick_no+1} · ronda ${Math.floor(pk.pick_no/S.members.length)+1}</span><a href="#picks" class="small" onclick="document.getElementById('picks').scrollIntoView({behavior:'smooth'});return false">Ver todas las rondas ↓</a></div>
-    <div style="display:flex;align-items:center;gap:10px;margin-top:4px">${posBadge(pl.pos)}<div style="flex:1;min-width:0"><b>${esc(member(pk.user_id).team)}</b> elige a <b>${esc(pl.name||'')}</b><div class="small muted">${pl.team||''} · ${pk.price_m}M${pl.fp!=null?' · '+Number(pl.fp).toFixed(1)+' FPPG':''}${pl.rookie?' · rookie':''}</div></div></div></div>`;
+    <div style="display:flex;align-items:center;gap:10px;margin-top:4px">${posBadge(pl.pos)}<div style="flex:1;min-width:0"><b>${esc(member(pk.user_id).team)}</b> elige a <b>${esc(pl.name||'')}</b><div class="small muted">${pl.team||''} · ${pk.price_m}M${pl.fp!=null?' · '+Number(pl.fp).toFixed(1)+' FPPG':''}${pl.rookie?' · rookie':''}</div>${rxBar('pick', pk.pick_no)}</div></div></div>`;
 }
 // Todas las rondas, la más reciente arriba
 function roundsBoard(){
   if(!S.picks.length) return '<p class="small muted">Todavía ninguno.</p>';
   const n = S.members.length || 1, rounds = {};
   S.picks.forEach(pk => (rounds[Math.floor(pk.pick_no/n)+1] = rounds[Math.floor(pk.pick_no/n)+1] || []).push(pk));
-  return Object.keys(rounds).map(Number).sort((a,b)=>b-a).map(r => `<div class="card" style="padding:6px 14px"><div class="small muted" style="margin:4px 0">Ronda ${r}</div><ul class="list">${rounds[r].map(pk => { const pl = S.byId[pk.player_id] || {}; return `<li style="padding:6px 0"><span class="small muted" style="min-width:22px">${pk.pick_no+1}</span>${posBadge(pl.pos,1)}<div class="grow"><div class="name" style="font-size:14px">${esc(pl.name||'')}</div><div class="small muted">${esc(member(pk.user_id).team)} · ${pk.price_m}M</div></div></li>`; }).join('')}</ul></div>`).join('');
+  return Object.keys(rounds).map(Number).sort((a,b)=>b-a).map(r => `<div class="card" style="padding:6px 14px"><div class="small muted" style="margin:4px 0">Ronda ${r}</div><ul class="list">${rounds[r].map(pk => { const pl = S.byId[pk.player_id] || {}; return `<li style="padding:6px 0"><span class="small muted" style="min-width:22px">${pk.pick_no+1}</span>${posBadge(pl.pos,1)}<div class="grow"><div class="name" style="font-size:14px">${esc(pl.name||'')}</div><div class="small muted">${esc(member(pk.user_id).team)} · ${pk.price_m}M</div>${rxBar('pick', pk.pick_no)}</div></li>`; }).join('')}</ul></div>`).join('');
 }
 async function pick(pid){
   const p = S.byId[pid];
@@ -973,17 +979,38 @@ async function viewComm(){
 }
 
 // ---------- Muro (Trash Talk) ----------
+// ---------- Reacciones (una por persona y elemento) ----------
+const RX = ['🔥','😂','😱','👏','🤡','🧠'];
+async function loadRx(){
+  const { data } = await sb.from('reactions').select('target_type,target_id,user_id,emoji').eq('league_id', S.league.id);
+  const m = {}; (data || []).filter(r => r.emoji).forEach(r => { const k = r.target_type + ':' + r.target_id; (m[k] = m[k] || { c:{}, mine:null }).c[r.emoji] = (m[k].c[r.emoji] || 0) + 1; if(r.user_id === S.user.id) m[k].mine = r.emoji; });
+  S.rx = m; S.rxSig = (data || []).map(r => r.target_id + r.user_id + r.emoji).join('|');
+}
+function rxBar(type, id){
+  const k = type + ':' + id, r = (S.rx || {})[k] || { c:{}, mine:null }, open = S.rxOpen === k;
+  const chips = RX.filter(e => r.c[e]).map(e => `<button class="${r.mine===e?'on':''}" onclick="doReact('${type}','${id}','${e}')">${e} ${r.c[e]}</button>`).join('');
+  const picker = open ? RX.map(e => `<button class="${r.mine===e?'on':''}" onclick="doReact('${type}','${id}','${e}')" aria-label="Reaccionar ${e}">${e}</button>`).join('') : `<button class="add" onclick="S.rxOpen='${k}';rxRedraw()" aria-label="Reaccionar">☺ +</button>`;
+  return `<div class="rx">${open ? '' : chips}${picker}</div>`;
+}
+function rxRedraw(){ if(S.view) return; if(S.tab === 'draft') renderDraft(); else if(S.tab === 'hoy') renderHome(); }
+async function doReact(type, id, e){
+  S.rxOpen = null;
+  const { error } = await sb.rpc('react', { p_league:S.league.id, p_type:type, p_target:String(id), p_emoji:e });
+  if(error) return fail(error);
+  await loadRx(); rxRedraw();
+}
 function postHTML(p){
   const when = new Date(p.created_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}), d = p.data || {};
   const team = uid => esc(member(uid).team);
-  if(p.kind === 'msg') return `<li style="align-items:flex-start">${avatar(p.user_id, 32)}<div class="grow"><div class="small muted"><b style="color:var(--text)">${team(p.user_id)}</b> · ${when}</div><div style="overflow-wrap:anywhere">${esc(p.body)}</div></div></li>`;
+  if(p.kind === 'msg') return `<li style="align-items:flex-start">${avatar(p.user_id, 32)}<div class="grow"><div class="small muted"><b style="color:var(--text)">${team(p.user_id)}</b> · ${when}</div><div style="overflow-wrap:anywhere">${esc(p.body)}</div>${rxBar('post', p.id)}</div></li>`;
   let txt = '';
   if(p.kind === 'room_open') txt = `<b>${(d.users||[]).map(team).join(' y ')}</b> se pelean por <b>${pname(d.player)}</b>. Mesa de negociación abierta.`;
   else if(p.kind === 'deal') txt = `<b>Acuerdo alcanzado:</b> ${team(d.keeper)} se queda a <b>${pname(d.player)}</b>.`;
   else if(p.kind === 'frozen') txt = `<b>Negociación rota:</b> ${pname(d.player)} queda congelado y cada implicado paga 3M.`;
+  else if(p.kind === 'signing') txt = `<b>Fichaje:</b> ${team(d.user)} incorpora a <b>${pname(d.player)}</b> y suelta a ${pname(d.out)}.`;
   else if(p.kind === 'drafteados') txt = d.none ? `<b>Jornada ${d.week} cerrada sin quinteto de Drafteados.</b> Esta semana nadie suma el +2.` : `<b>Quinteto Drafteados · jornada ${d.week}:</b> ${(d.players||[]).map(pname).join(', ')}. +2 a cada uno. Jornada cerrada.`;
   else return '';
-  return `<li style="align-items:flex-start"><span class="pill accent" style="flex-shrink:0;margin-top:2px">Liga</span><div class="grow"><div>${txt}</div><div class="small muted">${when}</div></div></li>`;
+  return `<li style="align-items:flex-start"><span class="pill accent" style="flex-shrink:0;margin-top:2px">Liga</span><div class="grow"><div>${txt}</div><div class="small muted">${when}</div>${rxBar('post', p.id)}</div></li>`;
 }
 async function wallSend(e){ e.preventDefault(); const i = $('#wmsg'), v = i.value.trim(); if(!v) return;
   const { error } = await sb.rpc('post_wall', { p_league:S.league.id, p_body:v });
@@ -1013,7 +1040,8 @@ async function renderHome(){
   const [tx, pr, wl] = await Promise.all([
     sb.from('nba_transactions').select('*').order('happened_at', { ascending:false }).range(0, 79),
     sb.from('predictions').select('award').eq('league_id', lid).eq('user_id', me),
-    sb.from('league_posts').select('*').eq('league_id', lid).order('created_at', { ascending:false }).range(0, 49)
+    sb.from('league_posts').select('*').eq('league_id', lid).order('created_at', { ascending:false }).range(0, 49),
+    loadRx()
   ]);
   const posts = wl.data || [], shown = S.wallAll ? posts : posts.slice(0, 4);
   const draftMsg = $('#wmsg')?.value || '';
