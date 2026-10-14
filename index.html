@@ -922,7 +922,7 @@ function viewRules(){
       <p><b>Jornadas semanales.</b> La alineación se cierra 1 hora antes del primer partido de la jornada y hasta entonces nadie ve la tuya. Los puntos se actualizan cada día.</p>
     </div>
     <h2>Clasificación</h2>
-    <div class="card small"><p>Estilo Fórmula 1: cada jornada reparte puntos de liga según el puesto. Con 3 equipos: <b>3 · 1 · 0</b>. Con 10: <b>25 · 18 · 15 · 12 · 10 · 8 · 6 · 4 · 2 · 1</b>.</p>
+    <div class="card small"><p>Estilo Fórmula 1: cada jornada reparte puntos de liga según el puesto. Con 3 equipos: <b>3 · 1 · 0</b>. Con 10: <b>25 · 18 · 15 · 12 · 10 · 8 · 6 · 4 · 2 · 1</b>. Si dos equipos empatan en una jornada, ambos se llevan los puntos del puesto más alto.</p>
       <p><b>Premios del mes</b>, los reparte la app al acabar cada mes. <b>Mánager del mes</b> (+3): el equipo que más puntos suma. <b>Rookie del mes</b> (+1): el equipo al que más puntos le han dado sus rookies; solo cuenta lo que puntuaron para ti, como titulares o sustitutos. <b>Pupas del mes</b>: el que menos suma; no puntúa, pero se lleva su tarjeta.</p>
       <p><b>Pedradas:</b> tus apuestas de temporada (MVP, Rookie del año, Mejor defensor, Sexto hombre, Más mejorado y Campeón). 3 puntos de liga por acierto. Se cierran con el primer partido.</p>
       <p><b>Quinteto de la semana de Drafteados:</b> +2 a cada jugador elegido.</p></div>
@@ -1051,6 +1051,47 @@ function txES(d){
 function countdown(ms){ if(ms <= 0) return 'cerrada'; const s = Math.floor(ms/1000), d = Math.floor(s/86400), h = Math.floor(s%86400/3600), m = Math.floor(s%3600/60), x = s%60;
   return (d ? d + 'd ' : '') + String(h).padStart(2,'0') + 'h ' + String(m).padStart(2,'0') + 'm ' + String(x).padStart(2,'0') + 's'; }
 function stopTick(){ if(S.tick) clearInterval(S.tick); S.tick = null; }
+// ---------- Puntos: jornada en juego y clasificación ----------
+async function loadScores(){
+  if(!S.sw){ const { data } = await sb.from('season_weeks').select('week_no,starts_on,ends_on,locks_at').eq('season', SEASON).gt('week_no', 0).order('week_no'); S.sw = data || []; }
+  const started = S.sw.filter(w => new Date(w.locks_at) <= new Date());
+  S.liveWeek = started.length ? started[started.length-1].week_no : null;
+  const wk = S.weekView || S.liveWeek;
+  const [lt, ws] = await Promise.all([
+    sb.rpc('league_table', { p_league:S.league.id }),
+    wk ? sb.rpc('week_scores', { p_league:S.league.id, p_week:wk }) : Promise.resolve({ data:null })
+  ]);
+  S.lt = lt.data || []; S.ws = ws.data || []; S.wsWeek = wk;
+}
+const fmtP = n => n == null ? '–' : Number(n).toLocaleString('es-ES', { minimumFractionDigits:1, maximumFractionDigits:1 });
+function jornadaCard(){
+  if(!S.liveWeek) return '';
+  const mine = (S.ws || []).find(x => x.user_id === S.user.id); if(!mine) return '';
+  const d = mine.detail || {}, closed = d.closed, n = S.ws.length;
+  return `<div class="card" style="margin-top:12px;border-color:var(--accent)">
+    <div class="between"><span class="small muted">Jornada ${S.wsWeek} · ${closed ? 'final' : 'en juego'}</span><span class="pill ${closed?'ok':'accent'}">${closed ? 'Final' : 'Provisional'}</span></div>
+    <div style="font-size:44px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1;margin:4px 0">${fmtP(mine.total)} <span style="font-size:15px;font-weight:600" class="muted">pts</span></div>
+    <div class="small">${mine.rank ? `<b>${mine.rank}º de ${n}</b> · ${closed ? 'sumaste' : 'si acabara ahora'} <b style="color:var(--accent)">+${mine.league_pts}</b> ${mine.league_pts===1?'punto':'puntos'} de liga` : ''}${d.pending_hustle ? ` · <span class="muted">faltan ${d.pending_hustle} partidos por sumar el esfuerzo</span>` : ''}</div>
+    <button class="ghost sm" style="width:100%;margin-top:10px" onclick="S.tab='liga';render()">Ver la jornada y la clasificación</button></div>`;
+}
+function tableCard(){
+  const rows = S.lt || [];
+  return `<div class="card" style="padding:4px 14px"><ul class="list">
+    ${rows.map((r,i) => `<li><span class="pill">${i+1}</span>${avatar(r.user_id, 30)}<div class="grow"><div class="name">${esc(r.team_name)}${r.user_id===S.user.id?' <span class="small muted">· tú</span>':''}</div>
+      <div class="small muted">${r.weeks.length} ${r.weeks.length===1?'jornada':'jornadas'} · ${fmtP(r.fantasy_total)} pts fantasy</div></div><span class="price" title="Puntos de liga">${r.league_pts}</span></li>`).join('')}
+    </ul><p class="small muted" style="margin:6px 0 10px">${S.liveWeek ? 'Puntos de liga: jornadas (3·1·0)' + ' + premios del mes + pedradas. La jornada en juego cuenta como provisional.' : 'Los puntos empiezan a contar con la jornada 1.'}</p></div>`;
+}
+function weekDetail(){
+  if(!S.wsWeek) return '<p class="muted">Todavía no ha empezado ninguna jornada.</p>';
+  const name = id => pname(id);
+  return (S.ws || []).map(x => { const d = x.detail || {}; return `<details class="card" ${x.user_id===S.user.id?'open':''}>
+    <summary class="between" style="cursor:pointer"><span class="name">${x.rank ? x.rank+'º · ' : ''}${esc(x.team_name)}</span><span class="price">${x.total==null?'oculto':fmtP(x.total)}</span></summary>
+    ${x.total==null ? '<p class="small muted">Las alineaciones rivales se ven al cerrar la jornada.</p>' : `<ul class="list" style="margin-top:6px">${(d.slots||[]).map(sl => `<li style="padding:6px 0">
+      ${posBadge(posOf(sl.player),1)}<div class="grow"><div class="name" style="font-size:14px">${name(sl.player)}${sl.slot==='sexto'?' <span class="pill">6º</span>':''}${sl.mult===2?' <span class="pill accent">×2</span>':''}</div>
+      <div class="small muted">${sl.games ? `${sl.games} ${sl.games===1?'partido':'partidos'} · media ${fmtP(sl.avg)}` : (sl.by ? `no jugó · entra <b style="color:var(--text)">${name(sl.by)}</b>` : 'no jugó · sin suplente válido')}${sl.bonus ? ' · <b style="color:var(--accent)">+2 Drafteados</b>' : ''}</div></div>
+      <span class="price">${fmtP(sl.points + (sl.bonus||0))}</span></li>`).join('')}</ul>`}
+    ${x.league_pts!=null && x.rank ? `<p class="small muted" style="margin:6px 0 0">${d.closed ? 'Sumó' : 'Si acabara ahora suma'} +${x.league_pts} de liga</p>` : ''}</details>`; }).join('');
+}
 async function renderHome(){
   if(!S.td){ $('#tab').innerHTML = '<p class="muted">Cargando…</p>'; if(!await loadTD()) return; }
   const T = S.td, me = S.user.id, lid = S.league.id;
@@ -1058,7 +1099,7 @@ async function renderHome(){
     sb.from('nba_transactions').select('*').order('happened_at', { ascending:false }).range(0, 79),
     sb.from('predictions').select('award').eq('league_id', lid).eq('user_id', me),
     sb.from('league_posts').select('*').eq('league_id', lid).order('created_at', { ascending:false }).range(0, 49),
-    loadRx()
+    loadRx(), (S.weekView = null, loadScores())
   ]);
   const posts = wl.data || [], shown = S.wallAll ? posts : posts.slice(0, 4);
   const draftMsg = $('#wmsg')?.value || '';
@@ -1078,6 +1119,7 @@ async function renderHome(){
       <div class="between"><span class="small">${fmtLock(T.week)} · ${lineupSaved ? 'tu alineación está guardada' : 'aún no has guardado tu alineación'}</span>
       <button class="sm ${lineupSaved?'ghost':''}" style="${lineupSaved?'':'background:var(--accent-ink);color:var(--accent)'}" onclick="S.tab='equipo';render()">${lineupSaved ? 'Revisar' : 'Alinear'}</button></div>
     </div>` : '<div class="clock wait" style="margin-top:12px">Temporada terminada.</div>'}
+    ${jornadaCard()}
     ${predOpen && preds < 6 ? `<div class="card between"><div><div class="name">Pedradas de temporada</div><div class="small muted">Llevas ${preds} de 6 · 3 puntos por acierto</div></div><button class="sm" onclick="S.tab='pred';render()">Completar</button></div>` : ''}
     <h2>Trash Talk</h2>
     <div class="card" style="padding:10px 14px">
@@ -1093,9 +1135,7 @@ async function renderHome(){
       ${!Object.keys(rooms).length && !deals.length && !mineP ? '<li class="muted">Sin movimientos todavía. El primero que fiche abre la veda.</li>' : ''}
     </ul></div>
     <h2>Clasificación</h2>
-    <div class="card" style="padding:4px 14px"><ul class="list">
-      ${S.members.map((m,i) => `<li><span class="pill">${i+1}</span>${avatar(m.id, 30)}<div class="grow"><div class="name">${esc(m.team)}${m.id===me?' <span class="small muted">· tú</span>':''}</div></div><span class="price">0</span></li>`).join('')}
-    </ul><p class="small muted" style="margin:6px 0 10px">Los puntos empiezan a contar con la jornada 1.</p></div>
+    ${tableCard()}
     <h2>Movimientos en la NBA</h2>
     <div class="card" style="padding:4px 14px"><ul class="list">
       ${news.map(x => `<li><span class="pill">${esc(x.team||'NBA')}</span><div class="grow"><div style="font-size:14px">${esc(txES(x.description))}</div>
@@ -1147,9 +1187,18 @@ async function renderPred(){
 }
 
 // ---------- Liga ----------
-function renderLiga(){
+async function renderLiga(){
   const pending = S.league.draft_status === 'pendiente';
-  $('#tab').innerHTML = `
+  let scores = '';
+  if(S.league.draft_status === 'cerrado'){
+    if(!S.lt) $('#tab').innerHTML = '<p class="muted" style="margin-top:14px">Cargando…</p>';
+    await loadScores(); if(S.tab !== 'liga' || S.view) return;
+    const opts = (S.sw || []).filter(w => new Date(w.locks_at) <= new Date());
+    scores = `<h2>Clasificación</h2>${tableCard()}
+      <h2 class="between">Jornada ${S.wsWeek || ''} ${opts.length > 1 ? `<select id="wsel" style="width:auto;margin:0">${opts.map(w=>`<option value="${w.week_no}" ${w.week_no===S.wsWeek?'selected':''}>Jornada ${w.week_no}</option>`).join('')}</select>` : ''}</h2>
+      ${weekDetail()}`;
+  }
+  $('#tab').innerHTML = scores + `
     <h2>Participantes</h2>
     <ul class="list card" style="padding:0 14px">${S.members.map(m=>`<li><span class="pill">${m.pos??'–'}</span>${avatar(m.id, 30)}<div class="grow"><div class="name">${esc(m.team)}</div><div class="small muted">${esc(m.name)}${m.id===S.league.commissioner_id?' · comisionado':''}</div></div><span class="small muted">${myTeamInfo(m.id).spent}M</span></li>`).join('')}</ul>
     ${pending ? `<div class="card"><div class="small muted">Código para invitar</div><div class="between"><code>${esc(S.league.invite_code)}</code><button class="ghost sm" onclick="navigator.clipboard.writeText('${esc(S.league.invite_code)}');toast('Copiado')">Copiar</button></div></div>`:''}
@@ -1163,6 +1212,7 @@ function renderLiga(){
         ${S.members.map((m,i)=>`<label class="small muted">Pick ${i+1}</label><select name="o${i}" class="ord">${S.members.map(x=>`<option value="${x.id}" ${x.id===(S.members.find(y=>y.pos===i+1)?.id ?? S.members[i].id)?'selected':''}>${esc(x.team)} (${esc(x.name)})</option>`).join('')}</select>`).join('')}
         <div class="row"><button class="ghost" onclick="randomizeOrder()">Sortear</button><button class="ghost" onclick="saveOrder()">Guardar a mano</button><button onclick="startDraft()">Empezar draft</button></div>
       </div>` : ''}`;
+  const ws = $('#wsel'); if(ws) ws.onchange = e => { S.weekView = +e.target.value; renderLiga(); };
 }
 function orderCard(){
   const set = S.members.every(m=>m.pos);
