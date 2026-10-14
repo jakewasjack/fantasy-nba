@@ -78,6 +78,8 @@ button:disabled{opacity:.35;cursor:not-allowed}
 .rx button.add{color:var(--muted)}
 .wall{max-height:380px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
   mask-image:linear-gradient(to bottom,#000 85%,transparent);-webkit-mask-image:linear-gradient(to bottom,#000 85%,transparent);padding-bottom:24px}
+.bell{position:relative;background:var(--surface2);border:1px solid var(--line);border-radius:50%;width:40px;height:40px;padding:0;font-size:18px;line-height:1}
+.bellN{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;border-radius:99px;background:var(--bad);color:#fff;font:700 11px/18px system-ui,sans-serif;text-align:center}
 .savebar{position:fixed;left:0;right:0;bottom:0;z-index:15;display:flex;gap:12px;align-items:center;max-width:720px;margin:0 auto;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:var(--surface);border-top:2px solid var(--accent)}
 code{background:var(--surface2);padding:2px 6px;border-radius:6px;font-size:14px}
 </style>
@@ -189,7 +191,7 @@ async function openLeague(id){
   if(!S.players) await loadPlayers();
   await refreshLeague();
   S.tab = l.draft_status === 'cerrado' ? 'hoy' : 'draft';
-  render(); startPoll();
+  render(); startPoll(); loadNotis();
 }
 async function loadPlayers(){
   const all = []; let from = 0;
@@ -262,7 +264,10 @@ function render(){
   $('#app').innerHTML = `
     <div class="between" style="margin-top:14px">
       <div><div class="small muted">${esc(S.league.name)}</div><div class="name" style="font-size:18px">${esc(member(S.user.id).team)}</div></div>
-      <button onclick="openView('perfil')" aria-label="Perfil y ajustes" style="background:none;padding:0;border-radius:50%">${avatar(S.user.id, 40)}</button>
+      <div style="display:flex;gap:10px;align-items:center">
+        <button onclick="openView('notis')" aria-label="Notificaciones" class="bell">🔔<span id="bellN" class="bellN ${S.unread?'':'hidden'}">${S.unread > 9 ? '9+' : (S.unread || '')}</span></button>
+        <button onclick="openView('perfil')" aria-label="Perfil y ajustes" style="background:none;padding:0;border-radius:50%">${avatar(S.user.id, 40)}</button>
+      </div>
     </div>
     <nav class="tabs">${tabs.map(([k,t])=>`<button class="${S.tab===k?'on':''}" onclick="goTab('${k}')">${t}</button>`).join('')}</nav>
     <main id="tab"></main>`;
@@ -856,6 +861,32 @@ async function avatarUpload(file){
 
 // ---------- Vistas secundarias: perfil, reglas, comisionado ----------
 function openView(v){ S.view = v; render(); window.scrollTo(0,0); }
+// ---------- Notificaciones (campana) ----------
+async function loadNotis(){
+  if(!S.league) return;
+  const [n, seen] = await Promise.all([
+    sb.from('notifications').select('*').or('league_id.eq.' + S.league.id + ',league_id.is.null').order('created_at', { ascending:false }).range(0, 49),
+    sb.from('notif_seen').select('seen_at').eq('user_id', S.user.id).maybeSingle() ]);
+  S.notis = n.data || []; const since = seen.data ? new Date(seen.data.seen_at) : new Date(0);
+  S.notiSeen = since; S.unread = S.notis.filter(x => new Date(x.created_at) > since).length;
+  const b = $('#bellN'); if(b){ b.textContent = S.unread > 9 ? '9+' : S.unread; b.classList.toggle('hidden', !S.unread); }
+}
+const NICON = { comi:'📣', org:'🏀', offer:'🤝', deal:'✅', room:'⚔️', frozen:'🧊', pedradas:'🔮', lineup:'📋' };
+async function viewNotis(){
+  $('#tab').innerHTML = '<p class="muted" style="margin-top:14px">Cargando…</p>';
+  await loadNotis(); if(S.view !== 'notis') return;
+  const since = S.notiSeen;
+  $('#tab').innerHTML = `<p style="margin-top:14px"><a href="#" onclick="closeView();return false">← Volver</a></p>
+    <h1>Notificaciones</h1>
+    <div class="card" style="padding:4px 14px"><ul class="list">${S.notis.map(x => `<li style="align-items:flex-start;${new Date(x.created_at) > since ? 'background:rgba(242,140,40,.08);margin:0 -14px;padding:10px 14px' : ''}">
+      <span style="font-size:20px;line-height:1.2">${NICON[x.kind] || '🔔'}</span>
+      <div class="grow"><div class="name" style="white-space:normal">${esc(x.title)}</div>${x.body ? `<div class="small" style="overflow-wrap:anywhere">${esc(x.body)}</div>` : ''}
+        <div class="small muted">${x.kind === 'comi' ? 'Comisionado · ' : x.kind === 'org' ? 'Organización · ' : ''}${new Date(x.created_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div></div>
+      ${x.link ? `<button class="sm ghost" onclick="S.view=null;goTab('${x.link}')">Ver</button>` : ''}</li>`).join('') || '<li class="muted">Nada por aquí todavía.</li>'}</ul></div>`;
+  await sb.rpc('notif_mark_seen'); S.unread = 0;
+}
+setInterval(() => { if(S.league && !document.hidden) loadNotis(); }, 60000);
+document.addEventListener('visibilitychange', () => { if(!document.hidden && S.league) loadNotis(); });
 function closeView(){ const back = S.view === 'arcade' ? 'pred' : null; arcStop(); S.view = null; if(back) S.tab = back; render(); }
 // ---------- Arcade: «Piedras desde el triple» ----------
 const ARC = { game:'triples' };
@@ -1033,7 +1064,7 @@ async function arcGameOver(){ const g = ARC.g, ov = $('#arcOver'); if(!ov) retur
 }
 
 function renderView(){
-  ({ perfil:viewProfile, reglas:viewRules, comi:viewComm, arcade:viewArcade })[S.view]();
+  ({ perfil:viewProfile, reglas:viewRules, comi:viewComm, arcade:viewArcade, notis:viewNotis })[S.view]();
 }
 function viewProfile(){
   const me = member(S.user.id), cur = me.avatar || '';
@@ -1152,11 +1183,21 @@ async function viewComm(){
       <button type="button" class="ghost" id="d5none" style="width:100%;margin-top:8px" ${can && !(C && C.mode==='none') ? '' : 'disabled'}>${S.d5none === S.d5w ? 'Pulsa otra vez: cerrar SIN quinteto' : 'Esta semana no hay quinteto'}</button>
       <p class="small muted" style="margin:8px 0 0">Cada jugador del quinteto suma +2 esa jornada a quien lo tenga alineado. Al cerrar se anuncia en el muro. Puedes corregirlo después si te equivocas.</p>
     </form>
+    <h2>Aviso a la liga</h2>
+    <form id="bcast" class="card">
+      <label class="small muted">Título</label><input name="t" maxlength="80" required placeholder="Ej.: Última llamada para las pedradas">
+      <label class="small muted">Mensaje (opcional)</label><textarea name="b" maxlength="500" rows="3" style="width:100%;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin:4px 0 10px;font:inherit;color:inherit" placeholder="Se cierran el martes a las 21:00…"></textarea>
+      <button style="width:100%">Enviar a todos</button>
+      <p class="small muted" style="margin:8px 0 0">Llega a la campana 🔔 de todos los participantes de la liga.</p>
+    </form>
     <h2>Liga</h2>
     <form id="lname" class="card"><label class="small muted">Nombre de la liga</label><input name="n" value="${esc(S.league.name)}" maxlength="50" required>
       <button style="width:100%">Cambiar nombre</button></form>
     <div class="card small"><p>Código de invitación: <code>${esc(S.league.invite_code)}</code></p>
       <p class="muted" style="margin:0">El orden y el arranque del draft están en la pestaña Liga mientras el draft esté pendiente.</p></div>`;
+  $('#bcast').onsubmit = async e => { e.preventDefault(); const f = new FormData(e.target);
+    const { error } = await sb.rpc('commissioner_broadcast', { p_league:S.league.id, p_title:f.get('t').trim(), p_body:(f.get('b')||'').trim() });
+    if(error) return fail(error); e.target.reset(); toast('Aviso enviado a toda la liga'); loadNotis(); };
   $('#lname').onsubmit = async e => { e.preventDefault(); const n = new FormData(e.target).get('n').trim();
     const { error } = await sb.rpc('rename_league', { p_league:S.league.id, p_name:n });
     if(error) return fail(error); await refreshLeague(); toast('Nombre de la liga cambiado'); render(); };
