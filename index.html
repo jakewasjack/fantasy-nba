@@ -854,7 +854,7 @@ async function avatarUpload(file){
 
 // ---------- Vistas secundarias: perfil, reglas, comisionado ----------
 function openView(v){ S.view = v; render(); window.scrollTo(0,0); }
-function closeView(){ arcStop(); S.view = null; render(); }
+function closeView(){ const back = S.view === 'arcade' ? 'pred' : null; arcStop(); S.view = null; if(back) S.tab = back; render(); }
 // ---------- Arcade: «Piedras desde el triple» ----------
 const ARC = { game:'triples' };
 async function arcLoad(){
@@ -872,7 +872,7 @@ async function arcLoad(){
 const tag3 = r => r.initials || (member(r.user_id).team || '???').replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]/g,'').slice(0,3).toUpperCase();
 function arcadeCard(){
   if(!ARC.top) return '';
-  return `<div class="card between" style="border-style:dashed"><div><div class="name">🕹️ Arcade · Piedras desde el triple</div>
+  return `<div class="card between" style="border-style:dashed"><div><div class="name">🕹️ 3 'N BRICK · arcade</div>
     <div class="small muted">${ARC.record ? `Récord de la liga: <b style="color:var(--text)">${ARC.record.score.toLocaleString('es-ES')}</b> · ${esc(tag3(ARC.record))}` : 'Nadie ha jugado todavía. El primer récord es tuyo.'}</div></div>
     <button class="sm" onclick="openView('arcade')">Jugar</button></div>`;
 }
@@ -880,9 +880,9 @@ async function viewArcade(){
   $('#tab').innerHTML = '<p class="muted" style="margin-top:14px">Cargando…</p>';
   await arcLoad(); if(S.view !== 'arcade') return;
   $('#tab').innerHTML = `
-    <p style="margin-top:14px"><a href="#" onclick="arcStop();closeView();return false">← Volver</a></p>
-    <h1 style="margin-bottom:2px">Piedras desde el triple</h1>
-    <p class="small muted" style="margin-top:0">Toca cuando la marca esté en la zona verde. Tres piedras y a la calle. Cada canasta acelera el tiro.</p>
+    <p style="margin-top:14px"><a href="#" onclick="arcStop();closeView();return false">← Volver a Pedradas</a></p>
+    <h1 style="margin-bottom:2px;font-family:ui-monospace,Menlo,monospace;letter-spacing:.04em">3 'N BRICK</h1>
+    <p class="small muted" style="margin-top:0">Toca cuando la marca esté en la zona verde, antes de que se acabe la posesión. Tres piedras y a la calle. Cada canasta acelera el tiro y el reloj.</p>
     <div style="position:relative">
       <canvas id="arc" width="320" height="220" style="width:100%;image-rendering:pixelated;border-radius:12px;border:1px solid var(--line);background:#0b0d12;touch-action:manipulation;display:block"></canvas>
       <div id="arcOver" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(10,12,16,.82);border-radius:12px"></div>
@@ -908,7 +908,7 @@ function arcStart(){
   arcStop();
   const cv = $('#arc'); if(!cv) return;
   ARC.cx = cv.getContext('2d');
-  ARC.g = { score:0, lives:3, streak:0, makes:0, t:0, phase:0, target:.55, ball:null, msg:null, over:false, shake:0 };
+  ARC.g = { score:0, lives:3, streak:0, makes:0, t:0, phase:0, target:.55, ball:null, msg:null, over:false, shake:0, clock:24 };
   arcNewShot();
   cv.onpointerdown = e => { e.preventDefault(); if(ARC.g && !ARC.g.over) arcShoot(); };
   document.addEventListener('keydown', arcKey);
@@ -922,6 +922,7 @@ function arcNewShot(){ const g = ARC.g;
   g.zone = Math.max(0.055, 0.24 - g.makes * 0.0065);       // ancho de la zona verde
   g.target = 0.25 + Math.random() * 0.5;
   g.mult = Math.min(5, 1 + Math.floor(g.streak / 5));
+  g.clock = 24; g.clockSecs = Math.max(4, 7 - g.makes * 0.08);   // la posesión dura 7 s reales al principio y baja hasta 4 s
 }
 function arcMarker(){ const g = ARC.g; return 0.5 - 0.5 * Math.cos(g.phase * Math.PI * 2); }
 function arcShoot(){ const g = ARC.g; if(g.ball) return;
@@ -930,10 +931,11 @@ function arcShoot(){ const g = ARC.g; if(g.ball) return;
   g.ball = { t:0, res }; arcBeep(520, .05);
 }
 const SHOUT = { make:['¡DE TRES!','¡DENTRO!','¡FUEGO!','¡NI TOCA ARO!','¡TRIPLAZO!'], perfect:['¡SOLO RED!','¡CHOF!','¡SEDA!'],
-  long:['¡PIEDRA!','¡LADRILLO!','¡AL HIERRO!','¡ESO NO ENTRA NI CON ESCALERA!'], short:['¡AIRBALL!','¡NI LLEGA!','¡CORTO, CORTO!'] };
+  long:['¡PIEDRA!','¡LADRILLO!','¡AL HIERRO!','¡ESO NO ENTRA NI CON ESCALERA!'], short:['¡AIRBALL!','¡NI LLEGA!','¡CORTO, CORTO!'], clock:['¡24 SEGUNDOS!','¡POSESIÓN AGOTADA!'] };
 const pick1 = a => a[Math.floor(Math.random() * a.length)];
 function arcStep(dt){ const g = ARC.g; if(g.over) return;
-  if(!g.ball) g.phase += dt * g.speed;
+  if(!g.ball){ g.phase += dt * g.speed; g.clock -= dt * 24 / g.clockSecs;
+    if(g.clock <= 0){ g.clock = 0; g.ball = { t:1, res:'clock' }; } }
   if(g.msg){ g.msg.t -= dt; if(g.msg.t <= 0) g.msg = null; }
   if(g.shake > 0) g.shake -= dt;
   if(g.ball){ g.ball.t += dt / 0.75;
@@ -969,7 +971,7 @@ function arcDraw(){ const c = ARC.cx, g = ARC.g, W = 320, H = 220; if(!c) return
   c.fillStyle = '#eef0f4'; c.fillRect(px+2, py+38, 7, 4); c.fillRect(px+9, py+38, 7, 4);  // zapatillas
   // balón
   let bx = px + 10, by = py - 20;
-  if(g.ball){ const t = Math.min(1, g.ball.t), r = g.ball.res;
+  if(g.ball && g.ball.res !== 'clock'){ const t = Math.min(1, g.ball.t), r = g.ball.res;
     const tx = r === 'short' ? 238 : r === 'long' ? 290 : 282, ty = r === 'short' ? 140 : 82;
     bx = (px + 10) + (tx - px - 10) * t; by = (py - 20) + (ty - py + 20) * t - Math.sin(Math.PI * t) * 95;
     if((r === 'make' || r === 'perfect') && t > .9) by += (t - .9) * 120;
@@ -984,6 +986,11 @@ function arcDraw(){ const c = ARC.cx, g = ARC.g, W = 320, H = 220; if(!c) return
   c.fillText('TÚ  ' + String(Math.max(ARC.mine, 0)).padStart(5,'0'), 8, 36);
   if(g.mult > 1){ c.fillStyle = '#f28c28'; c.font = 'bold 12px ui-monospace,Menlo,monospace'; c.fillText('x' + g.mult, 92, 8); }
   for(let i = 0; i < 3; i++){ c.fillStyle = i < g.lives ? '#b5562f' : '#2b303b'; c.fillRect(W - 16 - i*14, 8, 11, 7); if(i < g.lives){ c.fillStyle = '#7a3a20'; c.fillRect(W - 16 - i*14 + 5, 8, 1, 7); } }
+  // reloj de posesión (LED rojo)
+  const sc = g.clock < 5 ? g.clock.toFixed(1) : String(Math.ceil(g.clock));
+  c.fillStyle = '#1a0a0a'; c.fillRect(W/2 - 26, 4, 52, 26); c.strokeStyle = '#3a1414'; c.strokeRect(W/2 - 26.5, 3.5, 53, 27);
+  c.font = 'bold 22px ui-monospace,Menlo,monospace'; c.textAlign = 'center'; c.fillStyle = '#3a1010'; c.fillText('88', W/2, 6);
+  c.fillStyle = g.clock < 5 && Math.floor(g.clock * 4) % 2 ? '#ff8a7a' : '#ff3b2f'; c.fillText(sc, W/2, 6); c.textAlign = 'left';
   // barra de tiro
   const bxL = 60, bw = 200, byB = 196;
   c.fillStyle = '#20242d'; c.fillRect(bxL, byB, bw, 12);
@@ -1268,7 +1275,7 @@ async function renderHome(){
     sb.from('nba_transactions').select('*').order('happened_at', { ascending:false }).range(0, 79),
     sb.from('predictions').select('award').eq('league_id', lid).eq('user_id', me),
     sb.from('league_posts').select('*').eq('league_id', lid).order('created_at', { ascending:false }).range(0, 49),
-    loadRx(), (S.weekView = null, loadScores()), arcLoad()
+    loadRx(), (S.weekView = null, loadScores())
   ]);
   const posts = wl.data || [], shown = S.wallAll ? posts : posts.slice(0, 4);
   const draftMsg = $('#wmsg')?.value || '';
@@ -1290,7 +1297,6 @@ async function renderHome(){
     </div>` : '<div class="clock wait" style="margin-top:12px">Temporada terminada.</div>'}
     ${jornadaCard()}
     ${predOpen && preds < 6 ? `<div class="card between"><div><div class="name">Pedradas de temporada</div><div class="small muted">Llevas ${preds} de 6 · 3 puntos por acierto</div></div><button class="sm" onclick="S.tab='pred';render()">Completar</button></div>` : ''}
-    ${arcadeCard()}
     <h2>Trash Talk</h2>
     <div class="card" style="padding:10px 14px">
       <form id="wform" class="row"><input id="wmsg" maxlength="280" placeholder="Suelta algo a la liga…" value="${esc(draftMsg)}" style="margin:0"><button class="sm" style="flex:0 0 auto">Enviar</button></form>
@@ -1319,13 +1325,14 @@ async function renderHome(){
 // ---------- Predicciones ----------
 async function renderPred(){
   $('#tab').innerHTML = '<p class="muted">Cargando…</p>';
-  const { data, error } = await sb.from('predictions').select('*').eq('league_id', S.league.id);
-  if(error) return fail(error);
+  const [{ data, error }] = await Promise.all([sb.from('predictions').select('*').eq('league_id', S.league.id), S.league.draft_status === 'cerrado' ? arcLoad() : null]);
+  if(error) return fail(error); if(S.tab !== 'pred' || S.view) return;
   const closeAt = S.league.predictions_close_at ? new Date(S.league.predictions_close_at) : null;
   const closed = closeAt && new Date() >= closeAt;
   const mine = Object.fromEntries(data.filter(d=>d.user_id===S.user.id).map(d=>[d.award,d]));
   const opts = (rookie) => S.players.filter(p=>!rookie||p.rookie).map(p=>`<option value="${esc(p.name)} · ${p.team}">`).join('');
   $('#tab').innerHTML = `
+    ${S.league.draft_status === 'cerrado' ? `<h2>Arcade</h2>${arcadeCard()}<h2>Pedradas de temporada</h2>` : ''}
     <p class="muted small">${closed ? 'Pedradas cerradas.' : 'Se cierran el ' + (closeAt ? closeAt.toLocaleString('es-ES',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}) : '—') + '. Cada acierto: 3 puntos de liga. Podéis repetir jugador.'}</p>
     <datalist id="dl-all">${opts(false)}</datalist><datalist id="dl-rk">${opts(true)}</datalist>
     <form id="fp" class="card">
@@ -1372,7 +1379,7 @@ async function renderLiga(){
     <h2>Participantes</h2>
     <ul class="list card" style="padding:0 14px">${S.members.map(m=>`<li><span class="pill">${m.pos??'–'}</span>${avatar(m.id, 30)}<div class="grow"><div class="name">${esc(m.team)}</div><div class="small muted">${esc(m.name)}${m.id===S.league.commissioner_id?' · comisionado':''}</div></div><span class="small muted">${myTeamInfo(m.id).spent}M</span></li>`).join('')}</ul>
     ${pending ? `<div class="card"><div class="small muted">Código para invitar</div><div class="between"><code>${esc(S.league.invite_code)}</code><button class="ghost sm" onclick="navigator.clipboard.writeText('${esc(S.league.invite_code)}');toast('Copiado')">Copiar</button></div></div>`:''}
-    <div class="card" style="padding:4px 14px"><ul class="list"><li><button class="lnk grow" onclick="openView('reglas')">Reglas y puntuación</button><span>›</span></li><li><button class="lnk grow" onclick="openView('arcade')">🕹️ Arcade · Piedras desde el triple</button><span>›</span></li>${isComm() ? `<li><button class="lnk grow" onclick="openView('comi')">Panel del comisionado</button><span>›</span></li>` : ''}</ul></div>
+    <div class="card" style="padding:4px 14px"><ul class="list"><li><button class="lnk grow" onclick="openView('reglas')">Reglas y puntuación</button><span>›</span></li>${isComm() ? `<li><button class="lnk grow" onclick="openView('comi')">Panel del comisionado</button><span>›</span></li>` : ''}</ul></div>
     ${S.league.draft_status === 'cerrado' ? `<details class="card"><summary class="name" style="cursor:pointer">Resultado del draft</summary>
       <ol class="small" style="padding-left:22px;margin:10px 0 0">${S.picks.map(p=>`<li value="${p.pick_no+1}"><b>${esc(S.byId[p.player_id]?.name || 'Jugador')}</b> (${p.price_m}M) → ${esc(member(p.user_id).team)}</li>`).join('')}</ol></details>` : ''}
     ${isComm() && pending ? `
