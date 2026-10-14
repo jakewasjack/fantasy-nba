@@ -251,8 +251,8 @@ function myTeamInfo(uid = S.user.id){
 
 function render(){
   const done = S.league.draft_status === 'cerrado';
-  const tabs = done ? [['hoy','Hoy'],['equipo','Mi equipo'],['mercado','Mercado'],['pred','Pedradas'],['liga','Liga']]
-                    : [['draft','Draft'],['equipo','Mi equipo'],['pred','Pedradas'],['liga','Liga']];
+  const tabs = done ? [['hoy','Hoy'],['equipo','Mi equipo'],['mercado','Mercado'],['pred','Playground'],['liga','Liga']]
+                    : [['draft','Draft'],['equipo','Mi equipo'],['pred','Playground'],['liga','Liga']];
   if(!tabs.some(([k]) => k === S.tab)) S.tab = tabs[0][0];
   if(S.tab !== 'hoy') stopTick();
   if(S.tab !== 'mercado' || !S.room) stopRoomPoll();
@@ -880,7 +880,7 @@ async function viewArcade(){
   $('#tab').innerHTML = '<p class="muted" style="margin-top:14px">Cargando…</p>';
   await arcLoad(); if(S.view !== 'arcade') return;
   $('#tab').innerHTML = `
-    <p style="margin-top:14px"><a href="#" onclick="arcStop();closeView();return false">← Volver a Pedradas</a></p>
+    <p style="margin-top:14px"><a href="#" onclick="arcStop();closeView();return false">← Volver al Playground</a></p>
     <h1 style="margin-bottom:2px;font-family:ui-monospace,Menlo,monospace;letter-spacing:.04em">3 'N BRICK</h1>
     <p class="small muted" style="margin-top:0">Toca cuando la marca esté en la zona verde, antes de que se acabe la posesión. Tres piedras y a la calle. Cada canasta acelera el tiro y el reloj.</p>
     <div style="position:relative">
