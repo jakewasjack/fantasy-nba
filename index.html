@@ -854,9 +854,177 @@ async function avatarUpload(file){
 
 // ---------- Vistas secundarias: perfil, reglas, comisionado ----------
 function openView(v){ S.view = v; render(); window.scrollTo(0,0); }
-function closeView(){ S.view = null; render(); }
+function closeView(){ arcStop(); S.view = null; render(); }
+// ---------- Arcade: «Piedras desde el triple» ----------
+const ARC = { game:'triples' };
+async function arcLoad(){
+  const { data } = await sb.from('arcade_scores').select('id,user_id,score,initials,created_at').eq('league_id', S.league.id).eq('game', ARC.game).order('score', { ascending:false }).range(0, 199);
+  const rows = data || [];
+  const best = {}; rows.forEach(r => { if(!best[r.user_id] || r.score > best[r.user_id].score) best[r.user_id] = r; });
+  const now = new Date(), ym = now.toLocaleDateString('sv-SE', { timeZone:'Europe/Madrid' }).slice(0,7);
+  const month = rows.filter(r => new Date(r.created_at).toLocaleDateString('sv-SE', { timeZone:'Europe/Madrid' }).slice(0,7) === ym);
+  ARC.top = Object.values(best).sort((a,b) => b.score - a.score);
+  ARC.record = rows[0] || null;
+  ARC.mine = best[S.user.id]?.score || 0;
+  ARC.king = month[0] || null;
+  ARC.monthName = now.toLocaleDateString('es-ES', { month:'long', timeZone:'Europe/Madrid' });
+}
+const tag3 = r => r.initials || (member(r.user_id).team || '???').replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]/g,'').slice(0,3).toUpperCase();
+function arcadeCard(){
+  if(!ARC.top) return '';
+  return `<div class="card between" style="border-style:dashed"><div><div class="name">🕹️ Arcade · Piedras desde el triple</div>
+    <div class="small muted">${ARC.record ? `Récord de la liga: <b style="color:var(--text)">${ARC.record.score.toLocaleString('es-ES')}</b> · ${esc(tag3(ARC.record))}` : 'Nadie ha jugado todavía. El primer récord es tuyo.'}</div></div>
+    <button class="sm" onclick="openView('arcade')">Jugar</button></div>`;
+}
+async function viewArcade(){
+  $('#tab').innerHTML = '<p class="muted" style="margin-top:14px">Cargando…</p>';
+  await arcLoad(); if(S.view !== 'arcade') return;
+  $('#tab').innerHTML = `
+    <p style="margin-top:14px"><a href="#" onclick="arcStop();closeView();return false">← Volver</a></p>
+    <h1 style="margin-bottom:2px">Piedras desde el triple</h1>
+    <p class="small muted" style="margin-top:0">Toca cuando la marca esté en la zona verde. Tres piedras y a la calle. Cada canasta acelera el tiro.</p>
+    <div style="position:relative">
+      <canvas id="arc" width="320" height="220" style="width:100%;image-rendering:pixelated;border-radius:12px;border:1px solid var(--line);background:#0b0d12;touch-action:manipulation;display:block"></canvas>
+      <div id="arcOver" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(10,12,16,.82);border-radius:12px"></div>
+    </div>
+    <div class="between" style="margin-top:8px"><span class="small muted">Tu récord: <b id="arcMine" style="color:var(--text)">${ARC.mine.toLocaleString('es-ES')}</b></span>
+      <button class="ghost sm" id="arcSnd">${arcMuted() ? '🔇 Sonido' : '🔊 Sonido'}</button></div>
+    <h2>Arcade del mes · ${ARC.monthName}</h2>
+    <div class="card small">${ARC.king ? `👑 <b>${esc(tag3(ARC.king))}</b> · ${esc(member(ARC.king.user_id).team)} · <b>${ARC.king.score.toLocaleString('es-ES')}</b>` : 'Este mes nadie ha jugado todavía.'}
+      <p class="muted" style="margin:6px 0 0">Premio honorífico al mejor récord del mes. No suma puntos en la liga.</p></div>
+    <h2>Récords de la liga</h2>
+    <div class="card" style="padding:4px 14px"><ul class="list">${(ARC.top || []).map((r,i) => `<li><span class="pill">${i+1}</span>
+      <b style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.1em;min-width:44px">${esc(tag3(r))}</b>
+      <div class="grow"><div class="small muted">${esc(member(r.user_id).team)}</div></div><span class="price">${r.score.toLocaleString('es-ES')}</span></li>`).join('') || '<li class="muted">Sin partidas aún.</li>'}</ul></div>`;
+  $('#arcSnd').onclick = () => { try{ localStorage.setItem('arcMute', arcMuted() ? '' : '1'); }catch(e){} $('#arcSnd').textContent = arcMuted() ? '🔇 Sonido' : '🔊 Sonido'; };
+  arcStart();
+}
+function arcMuted(){ try{ return !!localStorage.getItem('arcMute'); }catch(e){ return false; } }
+function arcBeep(f, d, type){ if(arcMuted()) return; try{ const A = ARC.ac || (ARC.ac = new (window.AudioContext || window.webkitAudioContext)()); const o = A.createOscillator(), g = A.createGain();
+  o.type = type || 'square'; o.frequency.value = f; g.gain.value = .06; o.connect(g); g.connect(A.destination); o.start(); g.gain.exponentialRampToValueAtTime(.0001, A.currentTime + d); o.stop(A.currentTime + d); }catch(e){} }
+function arcStop(){ if(ARC.raf) cancelAnimationFrame(ARC.raf); ARC.raf = null; document.removeEventListener('keydown', arcKey); }
+function arcKey(e){ if(e.code === 'Space' || e.code === 'Enter'){ if(ARC.g && !ARC.g.over){ e.preventDefault(); arcShoot(); } } }
+function arcStart(){
+  arcStop();
+  const cv = $('#arc'); if(!cv) return;
+  ARC.cx = cv.getContext('2d');
+  ARC.g = { score:0, lives:3, streak:0, makes:0, t:0, phase:0, target:.55, ball:null, msg:null, over:false, shake:0 };
+  arcNewShot();
+  cv.onpointerdown = e => { e.preventDefault(); if(ARC.g && !ARC.g.over) arcShoot(); };
+  document.addEventListener('keydown', arcKey);
+  $('#arcOver').style.display = 'none';
+  let last = performance.now();
+  const loop = now => { if(S.view !== 'arcade' || !$('#arc')){ arcStop(); return; } const dt = Math.min(50, now - last) / 1000; last = now; arcStep(dt); arcDraw(); ARC.raf = requestAnimationFrame(loop); };
+  ARC.raf = requestAnimationFrame(loop);
+}
+function arcNewShot(){ const g = ARC.g;
+  g.speed = 0.75 + g.makes * 0.045;                       // vueltas por segundo de la barra
+  g.zone = Math.max(0.055, 0.24 - g.makes * 0.0065);       // ancho de la zona verde
+  g.target = 0.25 + Math.random() * 0.5;
+  g.mult = Math.min(5, 1 + Math.floor(g.streak / 5));
+}
+function arcMarker(){ const g = ARC.g; return 0.5 - 0.5 * Math.cos(g.phase * Math.PI * 2); }
+function arcShoot(){ const g = ARC.g; if(g.ball) return;
+  const m = arcMarker(), dist = Math.abs(m - g.target);
+  const res = dist <= g.zone * 0.18 ? 'perfect' : dist <= g.zone / 2 ? 'make' : (m < g.target ? 'short' : 'long');
+  g.ball = { t:0, res }; arcBeep(520, .05);
+}
+const SHOUT = { make:['¡DE TRES!','¡DENTRO!','¡FUEGO!','¡NI TOCA ARO!','¡TRIPLAZO!'], perfect:['¡SOLO RED!','¡CHOF!','¡SEDA!'],
+  long:['¡PIEDRA!','¡LADRILLO!','¡AL HIERRO!','¡ESO NO ENTRA NI CON ESCALERA!'], short:['¡AIRBALL!','¡NI LLEGA!','¡CORTO, CORTO!'] };
+const pick1 = a => a[Math.floor(Math.random() * a.length)];
+function arcStep(dt){ const g = ARC.g; if(g.over) return;
+  if(!g.ball) g.phase += dt * g.speed;
+  if(g.msg){ g.msg.t -= dt; if(g.msg.t <= 0) g.msg = null; }
+  if(g.shake > 0) g.shake -= dt;
+  if(g.ball){ g.ball.t += dt / 0.75;
+    if(g.ball.t >= 1){ const r = g.ball.res; g.ball = null;
+      if(r === 'make' || r === 'perfect'){ g.streak++; g.makes++; g.mult = Math.min(5, 1 + Math.floor((g.streak - 1) / 5)); const p = 3 * g.mult + (r === 'perfect' ? 2 : 0);
+        g.score += p; g.msg = { txt: pick1(SHOUT[r]) + ' +' + p, t:1, ok:true }; arcBeep(r === 'perfect' ? 1180 : 880, .12); setTimeout(() => arcBeep(1320, .08), 90);
+      } else { g.streak = 0; g.lives--; g.shake = .35; g.msg = { txt: pick1(SHOUT[r]), t:1.2, ok:false }; arcBeep(110, .3, 'sawtooth');
+        if(g.lives <= 0){ g.over = true; setTimeout(arcGameOver, 700); }
+      }
+      arcNewShot();
+    }
+  }
+}
+function arcDraw(){ const c = ARC.cx, g = ARC.g, W = 320, H = 220; if(!c) return;
+  c.save(); if(g.shake > 0) c.translate((Math.random() - .5) * 6, (Math.random() - .5) * 4);
+  c.fillStyle = '#0b0d12'; c.fillRect(0, 0, W, H);
+  // grada pixelada
+  for(let y = 8; y < 70; y += 8) for(let x = (y/8)%2*4; x < W; x += 8){ c.fillStyle = ['#1b1f2a','#222838','#161a24'][(x*7 + y*3) % 3]; c.fillRect(x, y, 6, 6); }
+  // parqué
+  c.fillStyle = '#7a4a22'; c.fillRect(0, 150, W, 70); c.fillStyle = '#8a5629'; for(let x = 0; x < W; x += 16) c.fillRect(x, 150, 8, 70);
+  c.fillStyle = '#f2e6d0'; c.fillRect(0, 150, W, 2); c.fillRect(46, 150, 2, 70);           // línea de fondo y de triple
+  // canasta
+  c.fillStyle = '#d9d9d9'; c.fillRect(296, 54, 4, 40); c.fillRect(300, 60, 20, 4);       // tablero y soporte
+  c.fillStyle = '#e5534b'; c.fillRect(268, 82, 28, 3);                                   // aro
+  c.fillStyle = '#eef0f4'; for(let i = 0; i < 4; i++) c.fillRect(270 + i*7, 85, 1, 10);   // red
+  // pívot (inventado): cuerpo, camiseta, cabeza
+  const px = 40, py = 108, up = g.ball && g.ball.t < .2;
+  c.fillStyle = '#5b3a29'; c.fillRect(px+4, py-14 - (up?4:0), 10, 10);                    // cabeza
+  c.fillStyle = '#f28c28'; c.fillRect(px+2, py-4 - (up?4:0), 14, 18);                      // camiseta
+  c.fillStyle = '#1a1206'; c.fillRect(px+6, py+2 - (up?4:0), 6, 6);                       // dorsal
+  c.fillStyle = '#5b3a29'; c.fillRect(px, py-2 - (up?10:0), 3, up?14:12); c.fillRect(px+15, py-2 - (up?10:0), 3, up?14:12);
+  c.fillStyle = '#20242d'; c.fillRect(px+3, py+14, 5, 26); c.fillRect(px+10, py+14, 5, 26); // piernas
+  c.fillStyle = '#eef0f4'; c.fillRect(px+2, py+38, 7, 4); c.fillRect(px+9, py+38, 7, 4);  // zapatillas
+  // balón
+  let bx = px + 10, by = py - 20;
+  if(g.ball){ const t = Math.min(1, g.ball.t), r = g.ball.res;
+    const tx = r === 'short' ? 238 : r === 'long' ? 290 : 282, ty = r === 'short' ? 140 : 82;
+    bx = (px + 10) + (tx - px - 10) * t; by = (py - 20) + (ty - py + 20) * t - Math.sin(Math.PI * t) * 95;
+    if((r === 'make' || r === 'perfect') && t > .9) by += (t - .9) * 120;
+    if(r === 'long' && t > .92){ bx -= (t - .92) * 260; by -= (t - .92) * 120; }
+  }
+  c.fillStyle = '#f28c28'; c.fillRect(bx-4, by-4, 8, 8); c.fillStyle = '#1a1206'; c.fillRect(bx-4, by-1, 8, 1); c.fillRect(bx-1, by-4, 1, 8);
+  // HUD
+  c.fillStyle = '#eef0f4'; c.font = 'bold 14px ui-monospace,Menlo,monospace'; c.textBaseline = 'top';
+  c.fillText(String(g.score).padStart(5, '0'), 8, 6);
+  c.font = '10px ui-monospace,Menlo,monospace'; c.fillStyle = '#9aa2b1';
+  const rec = Math.max(ARC.record?.score || 0, 0); c.fillText('REC ' + String(rec).padStart(5,'0') + (ARC.record ? ' ' + tag3(ARC.record) : ''), 8, 24);
+  c.fillText('TÚ  ' + String(Math.max(ARC.mine, 0)).padStart(5,'0'), 8, 36);
+  if(g.mult > 1){ c.fillStyle = '#f28c28'; c.font = 'bold 12px ui-monospace,Menlo,monospace'; c.fillText('x' + g.mult, 92, 8); }
+  for(let i = 0; i < 3; i++){ c.fillStyle = i < g.lives ? '#b5562f' : '#2b303b'; c.fillRect(W - 16 - i*14, 8, 11, 7); if(i < g.lives){ c.fillStyle = '#7a3a20'; c.fillRect(W - 16 - i*14 + 5, 8, 1, 7); } }
+  // barra de tiro
+  const bxL = 60, bw = 200, byB = 196;
+  c.fillStyle = '#20242d'; c.fillRect(bxL, byB, bw, 12);
+  c.fillStyle = '#2fbf9b'; c.fillRect(bxL + (g.target - g.zone/2) * bw, byB, g.zone * bw, 12);
+  c.fillStyle = '#a8ffe0'; c.fillRect(bxL + (g.target - g.zone*0.09) * bw, byB, Math.max(2, g.zone*0.18*bw), 12);
+  c.fillStyle = '#eef0f4'; c.fillRect(bxL + arcMarker() * bw - 1, byB - 3, 3, 18);
+  // mensaje
+  if(g.msg){ c.font = 'bold 18px ui-monospace,Menlo,monospace'; c.textAlign = 'center'; c.fillStyle = g.msg.ok ? '#2fbf9b' : '#e5534b'; c.fillText(g.msg.txt, W/2, 112 - (1 - g.msg.t) * 14); c.textAlign = 'left'; }
+  c.restore();
+}
+async function arcGameOver(){ const g = ARC.g, ov = $('#arcOver'); if(!ov) return;
+  const prevMine = ARC.mine, prevRec = ARC.record?.score || 0;
+  ov.style.display = 'flex';
+  ov.innerHTML = '<p class="muted">Guardando…</p>';
+  const { data, error } = await sb.rpc('arcade_submit', { p_league:S.league.id, p_score:g.score, p_game:ARC.game });
+  if(error){ ov.innerHTML = `<div style="text-align:center"><p>No se pudo guardar la partida.</p><button onclick="arcStart()">Otra</button></div>`; return; }
+  const diff = prevMine - g.score;
+  const line = data.league_record ? '<b style="color:var(--accent)">¡NUEVO RÉCORD DE LA LIGA!</b>' : data.personal_best ? '<b style="color:var(--ok)">¡Nuevo récord personal!</b>' :
+    diff <= 15 ? `Te has quedado a <b>${diff}</b> de tu récord. Una más.` : `Tu récord: ${prevMine.toLocaleString('es-ES')}`;
+  ov.innerHTML = `<div style="text-align:center;padding:12px;width:100%">
+    <div style="font:700 13px ui-monospace,Menlo,monospace;letter-spacing:.2em;color:var(--muted)">GAME OVER</div>
+    <div style="font:800 40px ui-monospace,Menlo,monospace;margin:4px 0">${g.score.toLocaleString('es-ES')}</div>
+    <div class="small" style="margin-bottom:10px">${line}</div>
+    ${data.league_record ? `<form id="arcIni" style="display:flex;gap:8px;justify-content:center;align-items:center;margin-bottom:10px">
+      <input id="arcI" maxlength="3" autocomplete="off" autocapitalize="characters" placeholder="AAA" style="width:96px;text-align:center;font:700 22px ui-monospace,Menlo,monospace;letter-spacing:.3em;text-transform:uppercase;margin:0">
+      <button>Firmar</button></form>` : ''}
+    <button id="arcAgain" style="min-width:140px">OTRA</button></div>`;
+  if(data.league_record){ const f = $('#arcIni'), i = $('#arcI'); i.focus();
+    i.oninput = () => { i.value = i.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3); };
+    f.onsubmit = async e => { e.preventDefault(); if(i.value.length !== 3) return toast('Tres iniciales, como en la recreativa');
+      const r = await sb.rpc('arcade_initials', { p_id:data.id, p_initials:i.value }); if(r.error) return fail(r.error);
+      f.outerHTML = `<p class="small">Firmado: <b style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.2em">${esc(i.value)}</b>. Lo verá toda la liga.</p>`; await arcLoad(); };
+  }
+  if(data.personal_best) ARC.mine = g.score;
+  if(data.league_record) ARC.record = { score:g.score, user_id:S.user.id, initials:null };
+  const m = $('#arcMine'); if(m) m.textContent = ARC.mine.toLocaleString('es-ES');
+  $('#arcAgain').onclick = () => arcStart();
+}
+
 function renderView(){
-  ({ perfil:viewProfile, reglas:viewRules, comi:viewComm })[S.view]();
+  ({ perfil:viewProfile, reglas:viewRules, comi:viewComm, arcade:viewArcade })[S.view]();
 }
 function viewProfile(){
   const me = member(S.user.id), cur = me.avatar || '';
@@ -1024,6 +1192,7 @@ function postHTML(p){
   if(p.kind === 'room_open') txt = `<b>${(d.users||[]).map(team).join(' y ')}</b> se pelean por <b>${pname(d.player)}</b>. Mesa de negociación abierta.`;
   else if(p.kind === 'deal') txt = `<b>Acuerdo alcanzado:</b> ${team(d.keeper)} se queda a <b>${pname(d.player)}</b>.`;
   else if(p.kind === 'frozen') txt = `<b>Negociación rota:</b> ${pname(d.player)} queda congelado y cada implicado paga 3M.`;
+  else if(p.kind === 'arcade') txt = `🕹️ <b>${esc(d.initials)}</b> (${team(p.user_id)}) bate el récord del arcade: <b>${Number(d.score).toLocaleString('es-ES')}</b>${d.prev_score ? ` · adiós al ${Number(d.prev_score).toLocaleString('es-ES')} de ${d.prev_initials ? esc(d.prev_initials) : team(d.prev_user)}` : ''}.`;
   else if(p.kind === 'signing') txt = `<b>Fichaje:</b> ${team(d.user)} incorpora a <b>${pname(d.player)}</b> y suelta a ${pname(d.out)}.`;
   else if(p.kind === 'drafteados') txt = d.none ? `<b>Jornada ${d.week} cerrada sin quinteto de Drafteados.</b> Esta semana nadie suma el +2.` : `<b>Quinteto Drafteados · jornada ${d.week}:</b> ${(d.players||[]).map(pname).join(', ')}. +2 a cada uno. Jornada cerrada.`;
   else return '';
@@ -1099,7 +1268,7 @@ async function renderHome(){
     sb.from('nba_transactions').select('*').order('happened_at', { ascending:false }).range(0, 79),
     sb.from('predictions').select('award').eq('league_id', lid).eq('user_id', me),
     sb.from('league_posts').select('*').eq('league_id', lid).order('created_at', { ascending:false }).range(0, 49),
-    loadRx(), (S.weekView = null, loadScores())
+    loadRx(), (S.weekView = null, loadScores()), arcLoad()
   ]);
   const posts = wl.data || [], shown = S.wallAll ? posts : posts.slice(0, 4);
   const draftMsg = $('#wmsg')?.value || '';
@@ -1121,6 +1290,7 @@ async function renderHome(){
     </div>` : '<div class="clock wait" style="margin-top:12px">Temporada terminada.</div>'}
     ${jornadaCard()}
     ${predOpen && preds < 6 ? `<div class="card between"><div><div class="name">Pedradas de temporada</div><div class="small muted">Llevas ${preds} de 6 · 3 puntos por acierto</div></div><button class="sm" onclick="S.tab='pred';render()">Completar</button></div>` : ''}
+    ${arcadeCard()}
     <h2>Trash Talk</h2>
     <div class="card" style="padding:10px 14px">
       <form id="wform" class="row"><input id="wmsg" maxlength="280" placeholder="Suelta algo a la liga…" value="${esc(draftMsg)}" style="margin:0"><button class="sm" style="flex:0 0 auto">Enviar</button></form>
@@ -1202,7 +1372,7 @@ async function renderLiga(){
     <h2>Participantes</h2>
     <ul class="list card" style="padding:0 14px">${S.members.map(m=>`<li><span class="pill">${m.pos??'–'}</span>${avatar(m.id, 30)}<div class="grow"><div class="name">${esc(m.team)}</div><div class="small muted">${esc(m.name)}${m.id===S.league.commissioner_id?' · comisionado':''}</div></div><span class="small muted">${myTeamInfo(m.id).spent}M</span></li>`).join('')}</ul>
     ${pending ? `<div class="card"><div class="small muted">Código para invitar</div><div class="between"><code>${esc(S.league.invite_code)}</code><button class="ghost sm" onclick="navigator.clipboard.writeText('${esc(S.league.invite_code)}');toast('Copiado')">Copiar</button></div></div>`:''}
-    <div class="card" style="padding:4px 14px"><ul class="list"><li><button class="lnk grow" onclick="openView('reglas')">Reglas y puntuación</button><span>›</span></li>${isComm() ? `<li><button class="lnk grow" onclick="openView('comi')">Panel del comisionado</button><span>›</span></li>` : ''}</ul></div>
+    <div class="card" style="padding:4px 14px"><ul class="list"><li><button class="lnk grow" onclick="openView('reglas')">Reglas y puntuación</button><span>›</span></li><li><button class="lnk grow" onclick="openView('arcade')">🕹️ Arcade · Piedras desde el triple</button><span>›</span></li>${isComm() ? `<li><button class="lnk grow" onclick="openView('comi')">Panel del comisionado</button><span>›</span></li>` : ''}</ul></div>
     ${S.league.draft_status === 'cerrado' ? `<details class="card"><summary class="name" style="cursor:pointer">Resultado del draft</summary>
       <ol class="small" style="padding-left:22px;margin:10px 0 0">${S.picks.map(p=>`<li value="${p.pick_no+1}"><b>${esc(S.byId[p.player_id]?.name || 'Jugador')}</b> (${p.price_m}M) → ${esc(member(p.user_id).team)}</li>`).join('')}</ol></details>` : ''}
     ${isComm() && pending ? `
