@@ -570,7 +570,7 @@ function drawTeam(){
         <button class="tg" onclick="luStart(${id})" aria-label="Hacer titular" style="padding:8px 10px">Titular</button></div>
       </li>${strip(id)}`; }).join('') || '<li class="muted">Banquillo vacío</li>'}
     </ul>
-    <p class="small muted">Si un titular no juega en toda la semana, entra el primer suplente que comparta su posición (los de dos colores valen para ambas). Si no hay ninguno, ese hueco no puntúa. Por el sexto hombre entra el primero disponible, sea de la posición que sea. Va por tu orden, pero si un híbrido hace falta para cubrir un hueco que nadie más puede cubrir, pasa por delante.</p>
+    <p class="small muted">Los suplentes suman el 20% de su media. Si un titular no juega en toda la semana, entra al 100% el primer suplente que comparta su posición (los de dos colores valen para ambas). Si no hay ninguno, ese hueco no puntúa. Por el sexto hombre entra el primero disponible, sea de la posición que sea. Va por tu orden, pero si un híbrido hace falta para cubrir un hueco que nadie más puede cubrir, pasa por delante.</p>
     <p class="small muted">Toca el nombre de un jugador para cambiarlo por un agente libre.</p>
     ${T.week ? `<button style="width:100%;margin-top:8px" onclick="luSave()" ${ready && L.dirty ? '' : 'disabled'}>${L.dirty ? 'Guardar alineación' : 'Alineación guardada'}</button>
       ${ready ? '' : '<p class="small muted">Para guardar necesitas 5 titulares válidos, capitán y vicecapitán.</p>'}` : ''}
@@ -1124,9 +1124,9 @@ function viewRules(){
       <p><b>Quinteto titular:</b> puntúan al 100%. Mínimo un exterior (G) y un alero (F), máximo dos pívots (C).</p>
       <p><b>Sexto hombre:</b> lo eliges cada semana y puntúa siempre al 100%, sea de la posición que sea.</p>
       <p><b>Capitán ×2</b> (uno de los cinco titulares). Si no juega ningún partido en la semana, el doble pasa al vicecapitán. Si tampoco juega, esa semana no hay doble.</p>
-      <p><b>Banquillo (4):</b> no puntúa, salvo que entre por alguien que no juegue <b>ningún partido en toda la semana</b>. Entran en el orden que tú pongas. Por un titular solo puede entrar un suplente que <b>comparta su posición</b> (los híbridos, como F-C, valen para ambas). Si no tienes ninguno, ese hueco no puntúa. Por el sexto hombre entra el primero disponible, sea de la posición que sea. Cada suplente cubre un solo hueco.</p>
+      <p><b>Banquillo (4):</b> los suplentes que no entran suman el <b>20% de su media</b> de la semana. Un suplente entra al 100% por alguien que no juegue <b>ningún partido en toda la semana</b>, en el orden que tú pongas. Por un titular solo puede entrar un suplente que <b>comparta su posición</b> (los híbridos, como F-C, valen para ambas). Si no tienes ninguno, ese hueco no puntúa. Por el sexto hombre entra el primero disponible, sea de la posición que sea. Cada suplente cubre un solo hueco.</p>
       <p><b>Los híbridos te ayudan:</b> el banquillo va por tu orden, pero si un híbrido hace falta para cubrir un hueco que nadie más puede cubrir, pasa por delante. Ejemplo: te faltan un alero y un pívot, y tu banquillo es 1º un F-C y 2º un F puro. El F-C cubre al pívot y el F puro al alero; se cubren los dos.</p>
-      <p><b>Puntos de la jornada = media por partido.</b> De cada jugador cuenta su <b>media</b> de puntos fantasy en los partidos que juegue esa semana, no la suma: da igual que su equipo juegue 2 o 4 partidos. Tu puntuación es la media del capitán ×2, más las medias de los otros cuatro titulares y del sexto hombre. Si alguien no juega en toda la semana, cuenta la media de su sustituto. El +2 de Drafteados se suma aparte, sin multiplicar.</p>
+      <p><b>Puntos de la jornada = media por partido.</b> De cada jugador cuenta su <b>media</b> de puntos fantasy en los partidos que juegue esa semana, no la suma: da igual que su equipo juegue 2 o 4 partidos. Tu puntuación es la media del capitán ×2, más las medias de los otros cuatro titulares y del sexto hombre, más el 20% de la media de los suplentes que no entren. Si alguien no juega en toda la semana, cuenta la media de su sustituto. El +2 de Drafteados se suma aparte, sin multiplicar.</p>
       <p><b>Jornadas semanales.</b> La alineación se cierra 1 hora antes del primer partido de la jornada y hasta entonces nadie ve la tuya. Los puntos se actualizan cada día.</p>
     </div>
     <h2>Clasificación</h2>
@@ -1308,7 +1308,9 @@ function weekDetail(){
     ${x.total==null ? '<p class="small muted">Las alineaciones rivales se ven al cerrar la jornada.</p>' : `<ul class="list" style="margin-top:6px">${(d.slots||[]).map(sl => `<li style="padding:6px 0">
       ${posBadge(posOf(sl.player),1)}<div class="grow"><div class="name" style="font-size:14px">${name(sl.player)}${sl.slot==='sexto'?' <span class="pill">6º</span>':''}${sl.mult===2?' <span class="pill accent">×2</span>':''}</div>
       <div class="small muted">${sl.games ? `${sl.games} ${sl.games===1?'partido':'partidos'} · media ${fmtP(sl.avg)}` : (sl.by ? `no jugó · entra <b style="color:var(--text)">${name(sl.by)}</b>` : 'no jugó · sin suplente válido')}${sl.bonus ? ' · <b style="color:var(--accent)">+2 Drafteados</b>' : ''}</div></div>
-      <span class="price">${fmtP(sl.points + (sl.bonus||0))}</span></li>`).join('')}</ul>`}
+      <span class="price">${fmtP(sl.points + (sl.bonus||0))}</span></li>`).join('')}
+      ${(d.bench_slots||[]).filter(b => !b.used).map(b => `<li style="padding:6px 0;opacity:.8">${posBadge(posOf(b.player),1)}<div class="grow"><div class="name" style="font-size:14px">${name(b.player)} <span class="pill">banquillo</span></div>
+        <div class="small muted">${b.games ? `${b.games} ${b.games===1?'partido':'partidos'} · media ${fmtP(b.avg)} · suma el 20%` : 'no jugó'}</div></div><span class="price">${fmtP(b.points)}</span></li>`).join('')}</ul>`}
     ${x.league_pts!=null && x.rank ? `<p class="small muted" style="margin:6px 0 0">${d.closed ? 'Sumó' : 'Si acabara ahora suma'} +${x.league_pts} de liga</p>` : ''}</details>`; }).join('');
 }
 async function renderHome(){
