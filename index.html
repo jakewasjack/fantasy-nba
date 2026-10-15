@@ -80,6 +80,9 @@ button:disabled{opacity:.35;cursor:not-allowed}
   mask-image:linear-gradient(to bottom,#000 85%,transparent);-webkit-mask-image:linear-gradient(to bottom,#000 85%,transparent);padding-bottom:24px}
 .bell{position:relative;background:transparent;border:0;width:40px;height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center}
 .bellN{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 4px;border-radius:99px;background:var(--bad);color:#fff;font:700 11px/18px system-ui,sans-serif;text-align:center}
+.ta{background:var(--surface);border:1px solid var(--line);border-radius:10px;margin:-6px 0 10px;overflow:hidden}
+.ta button{display:flex;gap:8px;align-items:center;width:100%;text-align:left;background:none;color:var(--text);border-radius:0;border-bottom:1px solid var(--line);padding:10px 12px;font-weight:400}
+.ta button:last-child{border-bottom:0}
 .savebar{position:fixed;left:0;right:0;bottom:0;z-index:15;display:flex;gap:12px;align-items:center;max-width:720px;margin:0 auto;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:var(--surface);border-top:2px solid var(--accent)}
 code{background:var(--surface2);padding:2px 6px;border-radius:6px;font-size:14px}
 </style>
@@ -1177,8 +1180,7 @@ async function viewComm(){
       <p class="small" style="margin:0 0 10px">${dm(W.starts_on||today)} – ${dm(W.ends_on==='9999'?today:W.ends_on)} · <b>${st(W)}</b>${C ? ' el ' + new Date(C.closed_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}</p>
       ${missH.length ? `<p class="small" style="margin:0 0 10px;color:var(--bad)"><b>Faltan las estadísticas de esfuerzo (hustle)</b> de ${missH.map(d=>dm(d.game_date)).join(', ')}. Se descargan solas desde tu Mac (9:52 y 21:52) si está encendido con Claude abierto. Ábrelo y espera a la siguiente descarga, o pídeselo a Claude, antes de cerrar la jornada.</p>` : ''}
       ${can ? '' : `<p class="small muted" style="margin:0 0 10px">Esta jornada aún no ha terminado: podrás cerrarla a partir del lunes siguiente.</p>`}
-      <datalist id="dl-d5">${S.players.map(p=>`<option value="${esc(p.name)} · ${p.team}">`).join('')}</datalist>
-      ${[0,1,2,3,4].map(i=>`<label class="small muted">Jugador ${i+1}</label><input name="p${i}" list="dl-d5" value="${C && C.mode==='none' ? '' : esc(label(cur[i]))}" placeholder="Escribe y elige" ${can?'':'disabled'}>`).join('')}
+      ${[0,1,2,3,4].map(i=>`<label class="small muted">Jugador ${i+1}</label><input name="p${i}" value="${C && C.mode==='none' ? '' : esc(label(cur[i]))}" placeholder="Escribe y elige" ${can?'':'disabled'}>`).join('')}
       <button style="width:100%" ${can?'':'disabled'}>${C ? 'Corregir quinteto y cerrar' : 'Guardar quinteto y cerrar jornada'}</button>
       <button type="button" class="ghost" id="d5none" style="width:100%;margin-top:8px" ${can && !(C && C.mode==='none') ? '' : 'disabled'}>${S.d5none === S.d5w ? 'Pulsa otra vez: cerrar SIN quinteto' : 'Esta semana no hay quinteto'}</button>
       <p class="small muted" style="margin:8px 0 0">Cada jugador del quinteto suma +2 esa jornada a quien lo tenga alineado. Al cerrar se anuncia en el muro. Puedes corregirlo después si te equivocas.</p>
@@ -1207,8 +1209,9 @@ async function viewComm(){
     S.d5none = null;
     const { error } = await sb.rpc('close_week_without_five', { p_league:S.league.id, p_week:S.d5w });
     if(error) return fail(error); toast('Jornada ' + S.d5w + ' cerrada sin quinteto'); viewComm(); };
+  document.querySelectorAll('#d5 input[name^=p]').forEach(i => attachTypeahead(i, S.players));
   $('#d5').onsubmit = async e => { e.preventDefault(); const f = new FormData(e.target), ids = [];
-    for(let i=0;i<5;i++){ const v = (f.get('p'+i)||'').trim(); if(!v) return fail('Faltan jugadores: el quinteto son 5.'); const p = S.players.find(p => (p.name+' · '+p.team) === v); if(!p) return fail(`No encuentro "${v}". Elígelo de la lista.`); if(ids.includes(p.id)) return fail(p.name + ' está repetido'); ids.push(p.id); }
+    for(let i=0;i<5;i++){ const v = (f.get('p'+i)||'').trim(); if(!v) return fail('Faltan jugadores: el quinteto son 5.'); const p = resolvePlayer(v, S.players); if(typeof p === 'string') return fail(p); if(ids.includes(p.id)) return fail(p.name + ' está repetido'); ids.push(p.id); }
     const { error } = await sb.rpc('set_drafteados_five', { p_league:S.league.id, p_week:S.d5w, p_players:ids });
     if(error) return fail(error); toast('Quinteto guardado · jornada ' + S.d5w + ' cerrada'); viewComm(); };
 }
@@ -1368,6 +1371,33 @@ async function renderHome(){
   if(T.week) S.tick = setInterval(() => { const el = $('#cd'); if(!el || S.tab !== 'hoy') return stopTick(); el.textContent = countdown(new Date(T.week.locks_at) - Date.now()); }, 1000);
 }
 
+// ---------- Buscador de jugadores (sustituye a <datalist>, que falla en algunos móviles) ----------
+const normTxt = t => (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+function findPlayers(q, pool){ const n = normTxt(q.replace(/·.*$/, '')); if(!n) return [];
+  const words = n.split(' ');
+  return pool.filter(p => { const h = normTxt(p.name); return words.every(w => h.includes(w)); })
+    .sort((a,b) => (normTxt(b.name).startsWith(n) - normTxt(a.name).startsWith(n)) || ((b.fp ?? -1) - (a.fp ?? -1))); }
+// Devuelve el jugador o un mensaje de error claro
+function resolvePlayer(v, pool){
+  const exact = pool.find(p => (p.name + ' · ' + p.team) === v); if(exact) return exact;
+  const m = findPlayers(v, pool);
+  if(m.length === 1) return m[0];
+  const full = m.filter(p => normTxt(p.name) === normTxt(v)); if(full.length === 1) return full[0];
+  if(!m.length) return `No encuentro "${v}". Prueba con el apellido.`;
+  return `"${v}" puede ser: ${m.slice(0,4).map(p => p.name + ' (' + p.team + ')').join(', ')}. Elige uno de la lista.`;
+}
+function attachTypeahead(input, pool){
+  const box = document.createElement('div'); box.className = 'ta hidden'; input.after(box);
+  const show = () => { const m = findPlayers(input.value, pool).slice(0, 6);
+    if(!m.length || input.value === (m[0].name + ' · ' + m[0].team)){ box.classList.add('hidden'); return; }
+    box.innerHTML = m.map(p => `<button type="button" data-v="${esc(p.name)} · ${p.team}">${posBadge(p.pos,1)} <b>${esc(p.name)}</b> <span class="muted">${p.team}${p.rookie?' · rookie':''}</span></button>`).join('');
+    box.classList.remove('hidden'); };
+  input.setAttribute('autocomplete', 'off');
+  input.addEventListener('input', show); input.addEventListener('focus', show);
+  input.addEventListener('blur', () => setTimeout(() => box.classList.add('hidden'), 150));
+  box.addEventListener('pointerdown', e => { const b = e.target.closest('button'); if(!b) return; e.preventDefault(); input.value = b.dataset.v; box.classList.add('hidden'); });
+}
+
 // ---------- Predicciones ----------
 async function renderPred(){
   $('#tab').innerHTML = '<p class="muted">Cargando…</p>';
@@ -1380,26 +1410,26 @@ async function renderPred(){
   $('#tab').innerHTML = `
     ${S.league.draft_status === 'cerrado' ? `<h2>Arcade</h2>${arcadeCard()}<h2>Pedradas de temporada</h2>` : ''}
     <p class="muted small">${closed ? 'Pedradas cerradas.' : 'Se cierran el ' + (closeAt ? closeAt.toLocaleString('es-ES',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}) : '—') + '. Cada acierto: 3 puntos de liga. Podéis repetir jugador.'}</p>
-    <datalist id="dl-all">${opts(false)}</datalist><datalist id="dl-rk">${opts(true)}</datalist>
     <form id="fp" class="card">
       ${AWARDS.map(([k,t])=>{
         const cur = mine[k];
         const val = k==='champion' ? (cur?.team||'') : (cur?.player_id ? (S.byId[cur.player_id]?.name+' · '+S.byId[cur.player_id]?.team) : '');
         return `<label class="small muted">${t}</label>` + (k==='champion'
           ? `<select name="${k}" ${closed?'disabled':''}><option value="">—</option>${TEAMS.map(x=>`<option ${val===x?'selected':''}>${x}</option>`).join('')}</select>`
-          : `<input name="${k}" list="${k==='roy'?'dl-rk':'dl-all'}" value="${esc(val)}" placeholder="Escribe y elige" ${closed?'disabled':''}>`);
+          : `<input name="${k}" data-rk="${k==='roy'?1:''}" value="${esc(val)}" placeholder="Escribe el apellido" ${closed?'disabled':''}>`);
       }).join('')}
       ${closed?'':'<button style="width:100%">Guardar pedradas</button>'}
     </form>
     ${closed ? `<h2>Lo que eligió cada uno</h2>${S.members.map(m=>`<div class="card"><div class="name">${esc(m.team)}</div>${AWARDS.map(([k,t])=>{const d=data.find(x=>x.user_id===m.id&&x.award===k);return `<div class="small"><span class="muted">${t}:</span> ${d?(k==='champion'?d.team:esc(S.byId[d.player_id]?.name)):'—'}</div>`}).join('')}</div>`).join('')}` : ''}`;
   if(closed) return;
+  document.querySelectorAll('#fp input[name]').forEach(i => attachTypeahead(i, i.dataset.rk ? S.players.filter(x=>x.rookie) : S.players));
   $('#fp').onsubmit = async e => {
     e.preventDefault(); const f = new FormData(e.target); const rows = [];
     for(const [k] of AWARDS){
       const v = (f.get(k)||'').trim(); if(!v) continue;
       if(k==='champion'){ rows.push({ league_id:S.league.id, user_id:S.user.id, award:k, team:v, player_id:null, updated_at:new Date().toISOString() }); continue; }
-      const p = S.players.find(p => (p.name+' · '+p.team) === v);
-      if(!p) return fail(`No encuentro "${v}". Elígelo de la lista.`);
+      const p = resolvePlayer(v, k==='roy' ? S.players.filter(x=>x.rookie) : S.players);
+      if(typeof p === 'string') return fail(p);
       if(k==='roy' && !p.rookie) return fail(p.name+' no es rookie');
       rows.push({ league_id:S.league.id, user_id:S.user.id, award:k, player_id:p.id, team:null, updated_at:new Date().toISOString() });
     }
