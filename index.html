@@ -46,6 +46,13 @@ button:disabled{opacity:.35;cursor:not-allowed}
 .price{font-variant-numeric:tabular-nums;font-weight:700;min-width:38px;text-align:right}
 .clock{background:var(--accent);color:var(--accent-ink);border-radius:var(--radius);padding:12px 14px;margin:12px 0;font-weight:600}
 .clock.wait{background:var(--surface2);color:var(--text);border:1px solid var(--line)}
+.clock.mini{padding:9px 14px;font-weight:500}
+.clock.mini .cdl{font-size:18px;font-variant-numeric:tabular-nums}
+details.rival summary::-webkit-details-marker{display:none}
+.rsum{display:flex;align-items:center;gap:10px;cursor:pointer;list-style:none}
+.rsum>*{flex:none}.rsum .rname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+details.rival[open] .chev{transform:rotate(180deg)}
+details.rival .chev{display:inline-block;transition:transform .15s}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
 .stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center}
 .stat b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
@@ -299,8 +306,8 @@ function myTeamInfo(uid = S.user.id){
 
 function render(){
   const done = S.league.draft_status === 'cerrado';
-  const tabs = done ? [['hoy','Hoy'],['equipo','Mi equipo'],['mercado','Mercado'],['pred','Playground'],['liga','Liga']]
-                    : [['draft','Draft'],['equipo','Mi equipo'],['pred','Playground'],['liga','Liga']];
+  const tabs = done ? [['hoy','Hoy'],['equipo','Plantilla'],['mercado','Mercado'],['pred','Playground'],['liga','Liga']]
+                    : [['draft','Draft'],['equipo','Plantilla'],['pred','Playground'],['liga','Liga']];
   if(!tabs.some(([k]) => k === S.tab)) S.tab = tabs[0][0];
   if(S.tab !== 'hoy') stopTick();
   if(S.tab !== 'mercado' || !S.room) stopRoomPoll();
@@ -1325,7 +1332,38 @@ async function loadScores(){
     wk ? sb.rpc('week_scores', { p_league:S.league.id, p_week:wk }) : Promise.resolve({ data:null })
   ]);
   S.lt = lt.data || []; S.ws = ws.data || []; S.wsWeek = wk;
+  await loadWeekGames(wk);
 }
+// Partidos de cada equipo NBA en la semana: total y ya jugados
+S.wg = {};
+async function loadWeekGames(wk){
+  const w = (S.sw || []).find(x => x.week_no === wk); if(!w) return;
+  if(S.wg[wk] && S.wg[wk].at > Date.now() - 600000) return;
+  let data = null;
+  try { ({ data } = await sb.from('games').select('home_team,away_team,status').gte('game_date', w.starts_on).lte('game_date', w.ends_on)); } catch(e){ return; }
+  const t = {};
+  (data || []).forEach(g => [g.home_team, g.away_team].forEach(k => { t[k] = t[k] || { n:0 }; t[k].n++; }));
+  S.wg[wk] = { at: Date.now(), t };
+}
+function gamesInfo(pid){ const tm = S.byId?.[pid]?.team; return tm && S.wg[S.wsWeek]?.t[tm]?.n || 0; }
+function slotRow(sl, closed){
+  const name = id => pname(id), tot = gamesInfo(sl.player), g = sl.games || 0;
+  const of = tot && !closed ? ` de ${tot}` : '';
+  let sub;
+  if(g) sub = `${g}${of} ${(tot||g)===1?'partido':'partidos'} · media ${fmtP(sl.avg)}`;
+  else if(!closed && tot) sub = `aún no ha jugado · ${tot} ${tot===1?'partido':'partidos'} esta semana${sl.by ? ` · de momento entra <b style="color:var(--text)">${name(sl.by)}</b>` : ''}`;
+  else sub = sl.by ? `no jugó · entra <b style="color:var(--text)">${name(sl.by)}</b>` : 'no jugó · sin suplente válido';
+  return `<li style="padding:6px 0">${posBadge(posOf(sl.player),1)}<div class="grow"><div class="name" style="font-size:14px">${name(sl.player)}${sl.slot==='sexto'?' <span class="pill">6º</span>':''}${sl.mult===2?' <span class="pill accent">×2</span>':''}</div>
+    <div class="small muted">${sub}${sl.bonus ? ' · <b style="color:var(--accent)">+2 Drafteados</b>' : ''}</div></div>
+    <span class="price">${fmtP(sl.points + (sl.bonus||0))}</span></li>`;
+}
+function benchRow(b, closed){
+  const tot = gamesInfo(b.player), g = b.games || 0, of = tot && !closed ? ` de ${tot}` : '';
+  return `<li style="padding:6px 0;opacity:.8">${posBadge(posOf(b.player),1)}<div class="grow"><div class="name" style="font-size:14px">${pname(b.player)} <span class="pill">banquillo</span></div>
+    <div class="small muted">${g ? `${g}${of} ${(tot||g)===1?'partido':'partidos'} · media ${fmtP(b.avg)} · suma el 20%` : (!closed && tot ? `aún no ha jugado · ${tot} ${tot===1?'partido':'partidos'} esta semana` : 'no jugó')}</div></div><span class="price">${fmtP(b.points)}</span></li>`;
+}
+function lineupList(x){ const d = x.detail || {};
+  return `<ul class="list" style="margin-top:6px">${(d.slots||[]).map(sl => slotRow(sl, d.closed)).join('')}${(d.bench_slots||[]).filter(b => !b.used).map(b => benchRow(b, d.closed)).join('')}</ul>`; }
 const fmtP = n => n == null ? '–' : Number(n).toLocaleString('es-ES', { minimumFractionDigits:1, maximumFractionDigits:1 });
 function jornadaCard(){
   if(!S.liveWeek) return '';
@@ -1335,7 +1373,12 @@ function jornadaCard(){
     <div class="between"><span class="small muted">Jornada ${S.wsWeek} · ${closed ? 'final' : 'en juego'}</span><span class="pill ${closed?'ok':'accent'}">${closed ? 'Final' : 'Provisional'}</span></div>
     <div style="font-size:44px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1;margin:4px 0">${fmtP(mine.total)} <span style="font-size:15px;font-weight:600" class="muted">pts</span></div>
     <div class="small">${mine.rank ? `<b>${mine.rank}º de ${n}</b> · ${closed ? 'sumaste' : 'si acabara ahora'} <b style="color:var(--accent)">+${mine.league_pts}</b> ${mine.league_pts===1?'punto':'puntos'} de liga` : ''}${d.pending_hustle ? ` · <span class="muted">faltan ${d.pending_hustle} partidos por sumar el esfuerzo</span>` : ''}</div>
-    <button class="ghost sm" style="width:100%;margin-top:10px" onclick="S.tab='liga';render()">Ver la jornada y la clasificación</button></div>`;
+    ${lineupList(mine)}</div>
+    ${n > 1 ? `<h2>Los demás en la jornada ${S.wsWeek}</h2>
+    ${S.ws.filter(x => x.user_id !== S.user.id).map(x => `<details class="card rival">
+      <summary class="rsum">${x.rank ? `<span class="pill">${x.rank}º</span>` : ''}${avatar(x.user_id, 26)}<span class="name rname">${esc(x.team_name)}</span>
+        <span class="price">${x.total==null ? 'oculto' : fmtP(x.total)}</span><span class="small muted chev">▾</span></summary>
+      ${x.total==null ? '<p class="small muted">Se ve al cerrar la jornada.</p>' : lineupList(x)}</details>`).join('')}` : ''}`;
 }
 function tableCard(){
   const rows = S.lt || [];
@@ -1349,12 +1392,7 @@ function weekDetail(){
   const name = id => pname(id);
   return (S.ws || []).map(x => { const d = x.detail || {}; return `<details class="card" ${x.user_id===S.user.id?'open':''}>
     <summary class="between" style="cursor:pointer"><span class="name">${x.rank ? x.rank+'º · ' : ''}${esc(x.team_name)}</span><span class="price">${x.total==null?'oculto':fmtP(x.total)}</span></summary>
-    ${x.total==null ? '<p class="small muted">Las alineaciones rivales se ven al cerrar la jornada.</p>' : `<ul class="list" style="margin-top:6px">${(d.slots||[]).map(sl => `<li style="padding:6px 0">
-      ${posBadge(posOf(sl.player),1)}<div class="grow"><div class="name" style="font-size:14px">${name(sl.player)}${sl.slot==='sexto'?' <span class="pill">6º</span>':''}${sl.mult===2?' <span class="pill accent">×2</span>':''}</div>
-      <div class="small muted">${sl.games ? `${sl.games} ${sl.games===1?'partido':'partidos'} · media ${fmtP(sl.avg)}` : (sl.by ? `no jugó · entra <b style="color:var(--text)">${name(sl.by)}</b>` : 'no jugó · sin suplente válido')}${sl.bonus ? ' · <b style="color:var(--accent)">+2 Drafteados</b>' : ''}</div></div>
-      <span class="price">${fmtP(sl.points + (sl.bonus||0))}</span></li>`).join('')}
-      ${(d.bench_slots||[]).filter(b => !b.used).map(b => `<li style="padding:6px 0;opacity:.8">${posBadge(posOf(b.player),1)}<div class="grow"><div class="name" style="font-size:14px">${name(b.player)} <span class="pill">banquillo</span></div>
-        <div class="small muted">${b.games ? `${b.games} ${b.games===1?'partido':'partidos'} · media ${fmtP(b.avg)} · suma el 20%` : 'no jugó'}</div></div><span class="price">${fmtP(b.points)}</span></li>`).join('')}</ul>`}
+    ${x.total==null ? '<p class="small muted">Las alineaciones rivales se ven al cerrar la jornada.</p>' : lineupList(x)}
     ${x.league_pts!=null && x.rank ? `<p class="small muted" style="margin:6px 0 0">${d.closed ? 'Sumó' : 'Si acabara ahora suma'} +${x.league_pts} de liga</p>` : ''}</details>`; }).join('');
 }
 async function renderHome(){
@@ -1378,7 +1416,11 @@ async function renderHome(){
     .filter(x => x.relevance >= 3 || x.player_ids.some(id => T.owner[id])).slice(0, 7);
   const lineupSaved = !!T.lineup;
   $('#tab').innerHTML = `
-    ${T.week ? `<div class="clock ${lineupSaved ? 'wait' : ''}" style="margin-top:12px">
+    ${T.week && S.liveWeek && new Date(T.week.locks_at) - Date.now() > 864e5 ? `<div class="clock mini wait" style="margin-top:12px">
+      <div class="between" style="gap:10px"><div><div class="small muted">Cierre jornada ${T.week.week_no} · ${fmtLock(T.week)}</div>
+        <div class="cdl">faltan <span id="cd">${countdown(new Date(T.week.locks_at) - Date.now())}</span></div></div>
+      <button class="sm ghost" onclick="S.tab='equipo';render()">${lineupSaved ? 'Revisar' : 'Alinear'}</button></div>
+    </div>` : T.week ? `<div class="clock ${lineupSaved ? 'wait' : ''}" style="margin-top:12px">
       <div class="small" style="opacity:.8">Jornada ${T.week.week_no} · cierre de alineaciones</div>
       <div id="cd" style="font-size:26px;font-variant-numeric:tabular-nums;margin:2px 0">${countdown(new Date(T.week.locks_at) - Date.now())}</div>
       <div class="between"><span class="small">${fmtLock(T.week)} · ${lineupSaved ? 'tu alineación está guardada' : 'aún no has guardado tu alineación'}</span>
