@@ -506,14 +506,15 @@ async function loadTD(force){
   const w = await sb.rpc('open_week', { p_season: SEASON });
   const week = w.data && w.data.week_no ? w.data : null;
   const none = Promise.resolve({ data: [] });
-  const [ro, rq, rs, lm, lu, wg, pv] = await Promise.all([
+  const [ro, rq, rs, lm, lu, wg, pv, plu] = await Promise.all([
     sb.from('rosters').select('player_id,user_id,price_paid_m').eq('league_id', lid),
     week ? sb.from('transfer_requests').select('*').eq('league_id', lid).eq('week_no', week.week_no).order('created_at') : none,
     week ? sb.from('player_reservations').select('*').eq('league_id', lid).eq('week_no', week.week_no) : none,
     sb.from('league_members').select('user_id,sanctions_m,adj_m').eq('league_id', lid),
     week ? sb.from('lineups').select('*').eq('league_id', lid).eq('user_id', me).eq('week_no', week.week_no).maybeSingle() : Promise.resolve({ data: null }),
     week ? sb.rpc('week_games', { p_season: SEASON, p_week: week.week_no }) : none,
-    sb.from('preference_vouchers').select('*').eq('league_id', lid)
+    sb.from('preference_vouchers').select('*').eq('league_id', lid),
+    week ? sb.from('lineups').select('*').eq('league_id', lid).eq('user_id', me).lt('week_no', week.week_no).order('week_no', { ascending:false }).limit(1) : Promise.resolve({ data: [] })
   ]);
   if(ro.error){ fail(ro.error); return null; }
   const games = {}; (wg.data || []).forEach(x => games[x.team] = x);
@@ -528,7 +529,7 @@ async function loadTD(force){
   const mrow = (lm.data || []).find(x => x.user_id === me) || {};
   const sanc = mrow.sanctions_m || 0, adj = mrow.adj_m || 0;
   const bal = S.league.budget_m - roster.reduce((a,id)=>a+paid[id],0) - sanc + adj + mineLive.reduce((a,t)=>a + (paid[t.player_out]||0) - price(t.player_in), 0);
-  S.td = { league: lid, week, games, owner, paid, cost, reqs, live, mineLive, outs, ins: new Set(ins), roster, eff, sanc, adj, bal, res: rs.data || [], lineup: lu.data, vouchers: pv.data || [] };
+  S.td = { league: lid, week, games, owner, paid, cost, reqs, live, mineLive, outs, ins: new Set(ins), roster, eff, sanc, adj, bal, res: rs.data || [], lineup: lu.data, prevLineup: lu.data ? null : ((plu.data || [])[0] || null), vouchers: pv.data || [] };
   return S.td;
 }
 const fmtLock = w => new Date(w.locks_at).toLocaleString('es-ES',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
@@ -558,13 +559,23 @@ async function renderTeam(){
     let lu;
     if(saved && saved.starters.length + saved.bench_order.length === ids.length && [...saved.starters, ...saved.bench_order].every(id=>ids.includes(id)))
       lu = { starters:[...saved.starters], bench:[...saved.bench_order], c:saved.captain_id, vc:saved.vice_captain_id, saved:true, dirty:false };
-    else {
+    else if(saved || T.prevLineup){
+      // Punto de partida: la última alineación guardada, con los fichajes en el hueco del que sale
+      lu = { ...adaptLineup(saved || T.prevLineup, ids), saved:!!saved, dirty:!!saved, from: saved ? null : T.prevLineup.week_no };
+    } else {
       const b = bestLineup(ids);
       lu = { starters:b.starters, bench:b.bench, c:b.starters[0], vc:b.starters[1], saved:false, dirty:true };
     }
     S.lu = { ...lu, league:S.league.id, pending:null, open:null };
   }
   if(S.tab === 'equipo') drawTeam();
+}
+function adaptLineup(src, ids){
+  const st = src.starters.map(Number), bn = src.bench_order.map(Number); let c = src.captain_id, vc = src.vice_captain_id;
+  const free = ids.filter(id => !st.includes(id) && !bn.includes(id));
+  st.forEach((x, i) => { if(!ids.includes(x) && free.length){ const y = free.shift(); st[i] = y; if(c === x) c = y; if(vc === x) vc = y; } });
+  bn.forEach((x, i) => { if(!ids.includes(x) && free.length) bn[i] = free.shift(); });
+  return { starters: st.filter(id => ids.includes(id)), bench: bn.filter(id => ids.includes(id)).concat(free), c, vc };
 }
 function drawTeam(){
   const L = S.lu, T = S.td;
@@ -577,7 +588,7 @@ function drawTeam(){
       : `<button class="sm" onclick="startSwap(${id})">Cambiar por un agente libre</button>`}</div></li>`; };
   const pOk = posOk(L.starters);
   const ready = luReady();
-  const status = !T.week ? '' : L.dirty ? (L.saved ? 'Cambios sin guardar' : 'Propuesta sin guardar') : 'Guardada';
+  const status = !T.week ? '' : L.dirty ? (L.saved || L.from ? 'Cambios sin guardar' : 'Propuesta sin guardar') : L.from ? `Se mantiene la de la jornada ${L.from}` : 'Guardada';
   const tot = L.starters.reduce((a,id)=>a+(T.games[S.byId[id]?.team]?.n||0),0);
   $('#tab').innerHTML = `
     <div class="card" style="margin-top:12px">
@@ -626,15 +637,15 @@ function drawTeam(){
     ${T.week ? `<button style="width:100%;margin-top:8px" onclick="luSave()" ${ready && L.dirty ? '' : 'disabled'}>${L.dirty ? 'Guardar alineación' : 'Alineación guardada'}</button>
       ${ready ? '' : '<p class="small muted">Para guardar necesitas 5 titulares válidos, capitán y vicecapitán.</p>'}` : ''}
     <p class="small muted" style="margin-top:14px">Saldo: ${T.bal}M${T.sanc ? ' · sanciones ' + T.sanc + 'M' : ''}${T.adj ? ' · acuerdos ' + (T.adj>0?'+':'') + T.adj + 'M' : ''}${T.mineLive.length ? ' · contando ' + T.mineLive.length + (T.mineLive.length===1?' fichaje pendiente':' fichajes pendientes') : ''}.</p>
-    ${T.week && L.dirty ? `<div style="height:76px"></div><div class="savebar"><div class="small" style="flex:1"><b>Cambios sin guardar</b><div class="muted">${ready ? 'Se guardan también al cambiar de pestaña' : 'Necesitas 5 titulares válidos, capitán y vice'}</div></div><button onclick="luSave()" ${ready?'':'disabled'}>Guardar</button></div>` : ''}`;
+    ${T.week && L.dirty ? `<div style="height:76px"></div><div class="savebar"><div class="small" style="flex:1"><b>Cambios sin guardar</b><div class="muted">${ready ? 'Si sales sin guardar, se descartan' : 'Necesitas 5 titulares válidos, capitán y vice'}</div></div><button onclick="luSave()" ${ready?'':'disabled'}>Guardar</button></div>` : ''}`;
 }
 function luReady(){ const L = S.lu; return !!(L && L.starters.length === 5 && L.c && L.vc && L.c !== L.vc && posOk(L.starters) && L.bench.length >= 1); }
-// Al salir de Mi equipo con cambios: si la alineación es válida se guarda sola; si no, se avisa
+// Al salir de Plantilla con cambios sin guardar: se avisa y, si se insiste, se descartan
 async function goTab(k){
   const L = S.lu;
   if(S.tab === 'equipo' && k !== 'equipo' && L && L.dirty && S.td && S.td.week){
-    if(luReady()){ if(!await luSave()) return; }
-    else if(S.leaveWarn !== k){ S.leaveWarn = k; toast('Tu alineación tiene cambios sin guardar y aún no es válida (5 titulares, capitán y vice). Pulsa otra vez la pestaña para salir sin guardar.'); return; }
+    if(S.leaveWarn !== k){ S.leaveWarn = k; toast('Tienes cambios sin guardar. Pulsa Guardar, o vuelve a tocar la pestaña para salir y descartarlos.'); return; }
+    S.lu = null;   // descartados: al volver se parte otra vez de la última alineación guardada
   }
   S.leaveWarn = null; S.tab = k; render();
 }
@@ -658,7 +669,7 @@ function luMove(id, d){ const b=S.lu.bench, i=b.indexOf(id), j=i+d; if(j<1||j>=b
 async function luSave(){ const L=S.lu;
   const { data, error } = await sb.rpc('save_lineup', { p_league:S.league.id, p_starters:L.starters, p_bench:L.bench, p_captain:L.c, p_vice:L.vc });
   if(error){ fail(error); return false; }
-  L.saved = true; L.dirty = false; if(S.td) S.td.lineup = { starters:[...L.starters], bench_order:[...L.bench], captain_id:L.c, vice_captain_id:L.vc };
+  L.saved = true; L.dirty = false; L.from = null; if(S.td) S.td.prevLineup = null; if(S.td) S.td.lineup = { starters:[...L.starters], bench_order:[...L.bench], captain_id:L.c, vice_captain_id:L.vc };
   if(S.tab === 'equipo') drawTeam(); toast('Alineación guardada para la jornada ' + data);
   return true;
 }
@@ -1412,7 +1423,7 @@ async function renderHome(){
   const ownerTag = id => { const o = T.owner[id]; return o === me ? 'tuyo' : o ? 'de ' + esc(member(o).team) : (S.byId[id]?.price >= 3 ? 'agente libre' : null); };
   const news = (tx.data || []).map(x => ({ ...x, tags: x.player_ids.map(id => ({ id, tag: ownerTag(id) })).filter(t => t.tag) }))
     .filter(x => x.relevance >= 3 || x.player_ids.some(id => T.owner[id])).slice(0, 7);
-  const lineupSaved = !!T.lineup;
+  const lineupSaved = !!T.lineup || !!T.prevLineup;
   $('#tab').innerHTML = `
     ${T.week && S.liveWeek && new Date(T.week.locks_at) - Date.now() > 864e5 ? `<div class="clock mini wait" style="margin-top:12px">
       <div class="between" style="gap:10px"><div><div class="small muted">Cierre jornada ${T.week.week_no} · ${fmtLock(T.week)}</div>
@@ -1421,7 +1432,7 @@ async function renderHome(){
     </div>` : T.week ? `<div class="clock ${lineupSaved ? 'wait' : ''}" style="margin-top:12px">
       <div class="small" style="opacity:.8">Jornada ${T.week.week_no} · cierre de alineaciones</div>
       <div id="cd" style="font-size:26px;font-variant-numeric:tabular-nums;margin:2px 0">${countdown(new Date(T.week.locks_at) - Date.now())}</div>
-      <div class="between"><span class="small">${fmtLock(T.week)} · ${lineupSaved ? 'tu alineación está guardada' : 'aún no has guardado tu alineación'}</span>
+      <div class="between"><span class="small">${fmtLock(T.week)} · ${T.lineup ? 'tu alineación está guardada' : T.prevLineup ? 'si no cambias nada, se mantiene la de la jornada ' + T.prevLineup.week_no : 'aún no has guardado tu alineación'}</span>
       <button class="sm ${lineupSaved?'ghost':''}" style="${lineupSaved?'':'background:var(--accent-ink);color:var(--accent)'}" onclick="S.tab='equipo';render()">${lineupSaved ? 'Revisar' : 'Alinear'}</button></div>
     </div>` : '<div class="clock wait" style="margin-top:12px">Temporada terminada.</div>'}
     ${jornadaCard()}
