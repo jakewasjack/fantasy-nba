@@ -1366,19 +1366,17 @@ function lineupList(x){ const d = x.detail || {};
   return `<ul class="list" style="margin-top:6px">${(d.slots||[]).map(sl => slotRow(sl, d.closed)).join('')}${(d.bench_slots||[]).filter(b => !b.used).map(b => benchRow(b, d.closed)).join('')}</ul>`; }
 const fmtP = n => n == null ? '–' : Number(n).toLocaleString('es-ES', { minimumFractionDigits:1, maximumFractionDigits:1 });
 function jornadaCard(){
-  if(!S.liveWeek) return '';
-  const mine = (S.ws || []).find(x => x.user_id === S.user.id); if(!mine) return '';
-  const d = mine.detail || {}, closed = d.closed, n = S.ws.length;
-  return `<div class="card" style="margin-top:12px;border-color:var(--accent)">
-    <div class="between"><span class="small muted">Jornada ${S.wsWeek} · ${closed ? 'final' : 'en juego'}</span><span class="pill ${closed?'ok':'accent'}">${closed ? 'Final' : 'Provisional'}</span></div>
-    <div style="font-size:44px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1;margin:4px 0">${fmtP(mine.total)} <span style="font-size:15px;font-weight:600" class="muted">pts</span></div>
-    <div class="small">${mine.rank ? `<b>${mine.rank}º de ${n}</b> · ${closed ? 'sumaste' : 'si acabara ahora'} <b style="color:var(--accent)">+${mine.league_pts}</b> ${mine.league_pts===1?'punto':'puntos'} de liga` : ''}${d.pending_hustle ? ` · <span class="muted">faltan ${d.pending_hustle} partidos por sumar el esfuerzo</span>` : ''}</div>
-    ${lineupList(mine)}</div>
-    ${n > 1 ? `<h2>Los demás en la jornada ${S.wsWeek}</h2>
-    ${S.ws.filter(x => x.user_id !== S.user.id).map(x => `<details class="card rival">
-      <summary class="rsum">${x.rank ? `<span class="pill">${x.rank}º</span>` : ''}${avatar(x.user_id, 26)}<span class="name rname">${esc(x.team_name)}</span>
+  if(!S.liveWeek || !(S.ws || []).length) return '';
+  const closed = S.ws.some(x => x.detail?.closed), me = S.user.id;
+  const rows = S.ws.slice().sort((a,b) => (a.rank ?? 99) - (b.rank ?? 99));
+  const pend = rows.find(x => x.user_id === me)?.detail?.pending_hustle;
+  return `<div class="between" style="margin:18px 0 8px"><h2 style="margin:0">Game Time! · Jornada ${S.wsWeek}</h2><span class="pill ${closed?'ok':'accent'}">${closed ? 'Final' : 'Provisional'}</span></div>
+    ${rows.map(x => { const mine = x.user_id === me; return `<details class="card rival" ${mine ? 'style="border-color:var(--accent)"' : ''}>
+      <summary class="rsum">${x.rank ? `<span class="pill">${x.rank}º</span>` : ''}${avatar(x.user_id, 26)}<span class="rname"><span class="name">${esc(x.team_name)}${mine ? ' <span class="small muted">· tú</span>' : ''}</span>
+        ${x.rank && x.league_pts != null ? `<br><span class="small muted"><b style="color:var(--accent)">+${x.league_pts}</b> ${x.league_pts===1?'punto':'puntos'} de liga</span>` : ''}</span>
         <span class="price">${x.total==null ? 'oculto' : fmtP(x.total)}</span><span class="small muted chev">▾</span></summary>
-      ${x.total==null ? '<p class="small muted">Se ve al cerrar la jornada.</p>' : lineupList(x)}</details>`).join('')}` : ''}`;
+      ${x.total==null ? '<p class="small muted">Se ve al cerrar la jornada.</p>' : lineupList(x)}</details>`; }).join('')}
+    ${pend && !closed ? `<p class="small muted" style="margin:4px 2px 0">Faltan ${pend} partidos por sumar el esfuerzo.</p>` : ''}`;
 }
 function tableCard(){
   const rows = S.lt || [];
