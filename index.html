@@ -127,6 +127,7 @@ function viewAuth(mode='login'){
         <label class="small muted">Contraseña</label><input name="pass" type="password" required minlength="8" autocomplete="${mode==='login'?'current-password':'new-password'}">
         <button style="width:100%">${mode==='login'?'Entrar':'Crear cuenta'}</button>
       </form>
+      ${mode==='login'?'<p class="small" style="text-align:center;margin:12px 0 0"><a href="#" onclick="viewForgot();return false">¿Has olvidado tu contraseña?</a></p>':''}
     </div>`;
   $('#f').onsubmit = async e => {
     e.preventDefault(); const f = new FormData(e.target);
@@ -141,6 +142,46 @@ function viewAuth(mode='login'){
         if(error) throw error;
       }
     }catch(err){ fail(err); }
+  };
+}
+function viewForgot(){
+  $('#app').innerHTML = `
+    <h1>Fantasy NBA</h1>
+    <div class="card">
+      <h2 style="margin-top:0">Recuperar contraseña</h2>
+      <p class="small muted">Escribe el email con el que entras. Te enviaremos un enlace para poner una contraseña nueva. Si no lo ves en unos minutos, mira en spam.</p>
+      <form id="f">
+        <label class="small muted">Email</label><input name="email" type="email" required autocomplete="email">
+        <button style="width:100%">Enviar enlace</button>
+      </form>
+      <p class="small" style="text-align:center;margin:12px 0 0"><a href="#" onclick="viewAuth('login');return false">← Volver a entrar</a></p>
+    </div>`;
+  $('#f').onsubmit = async e => {
+    e.preventDefault(); const email = new FormData(e.target).get('email');
+    const btn = e.target.querySelector('button'); btn.disabled = true;
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+    btn.disabled = false;
+    if(error) return fail(error);
+    $('#app').querySelector('.card').innerHTML = `<h2 style="margin-top:0">Revisa tu email</h2><p class="muted">Si ${esc(email)} tiene cuenta, te llegará un enlace. Ábrelo en este mismo dispositivo y podrás poner una contraseña nueva.</p><p class="small"><a href="#" onclick="viewAuth('login');return false">← Volver a entrar</a></p>`;
+  };
+}
+function viewNewPass(){
+  S.recovering = true; stopPoll();
+  $('#app').innerHTML = `
+    <h1>Fantasy NBA</h1>
+    <div class="card">
+      <h2 style="margin-top:0">Nueva contraseña</h2>
+      <form id="f">
+        <label class="small muted">Contraseña nueva (mínimo 8 caracteres)</label><input name="pass" type="password" required minlength="8" autocomplete="new-password">
+        <button style="width:100%">Guardar y entrar</button>
+      </form>
+    </div>`;
+  $('#f').onsubmit = async e => {
+    e.preventDefault();
+    const { error } = await sb.auth.updateUser({ password: new FormData(e.target).get('pass') });
+    if(error) return fail(error);
+    S.recovering = false; history.replaceState(null, '', location.pathname);
+    toast('Contraseña cambiada'); loadHome();
   };
 }
 
@@ -1501,7 +1542,13 @@ async function startDraft(){
 function localGet(k){ try{ return localStorage.getItem('fnba_'+k) }catch{ return null } }
 function localSet(k,v){ try{ localStorage.setItem('fnba_'+k, v) }catch{} }
 
+S.recovering = /type=recovery/.test(location.hash + location.search);
 sb.auth.onAuthStateChange((ev, session) => {
+  if((ev === 'PASSWORD_RECOVERY' || S.recovering) && session){
+    S.user = session.user; S.booted = true;
+    if(!S.newPassShown){ S.newPassShown = true; setTimeout(viewNewPass, 0); }
+    return;
+  }
   const u = session?.user || null;
   if(u?.id === S.user?.id && S.booted) return;
   S.booted = true;
