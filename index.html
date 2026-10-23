@@ -642,7 +642,7 @@ function drawTeam(){
     <ul class="list card" style="padding:0 14px">
       ${L.starters.slice().sort((a,b)=>posRank(a)-posRank(b)).map(id=>`<li style="${L.open===id?'border-bottom:0':''}">
         ${posBadge(posOf(id))}
-        <div class="grow"><button class="lnk name" onclick="luOpen(${id})">${pname(id)}${injIcon(id)}${tag(id)}</button><div class="small muted">${id===L.c?'<b style="color:var(--accent)">Capitán ×2</b> · ':id===L.vc?'<b style="color:var(--text)">Vicecapitán</b> · ':''}${sub(id)}</div>${injLine(id)}${gamesLine(T,id)}</div>
+        <div class="grow"><button class="lnk name" onclick="luOpen(${id})">${pname(id)}${injIcon(id)}${tag(id)}</button><div class="small muted">${id===L.c?'<b style="color:var(--accent)">Capitán ×2</b> · ':id===L.vc?'<b style="color:var(--text)">Vicecapitán</b> · ':''}${sub(id)}</div>${injLine(id)}${formLine(id)}${gamesLine(T,id)}</div>
         ${L.pending ? `<button class="sm" onclick="luSwap(${id})">Sale</button>` : `
           <button class="tg ${id===L.c?'on':''}" onclick="luCap(${id})" aria-label="Hacer capitán">C</button>
           <button class="tg ${id===L.vc?'on':''}" onclick="luVice(${id})" aria-label="Hacer vicecapitán">VC</button>
@@ -656,7 +656,7 @@ function drawTeam(){
       ${L.bench.slice(0,1).map(id=>`<li style="${L.open===id?'border-bottom:0':''}">
         <span class="pill accent">6º</span>
         ${posBadge(posOf(id), true)}
-        <div class="grow"><button class="lnk name" onclick="luOpen(${id})">${pname(id)}${injIcon(id)}${tag(id)}</button><div class="small muted">${sub(id)}</div>${injLine(id)}${gamesLine(T,id)}</div>
+        <div class="grow"><button class="lnk name" onclick="luOpen(${id})">${pname(id)}${injIcon(id)}${tag(id)}</button><div class="small muted">${sub(id)}</div>${injLine(id)}${formLine(id)}${gamesLine(T,id)}</div>
         <button class="tg" onclick="luStart(${id})" aria-label="Hacer titular">↑</button>
       </li>${strip(id)}`).join('') || '<li class="muted">Elige un sexto hombre desde el banquillo (botón Sexto)</li>'}
     </ul>
@@ -665,7 +665,7 @@ function drawTeam(){
       ${L.bench.slice(1).map((id,j)=>{ const i = j+1; return `<li style="flex-wrap:wrap;${L.open===id?'border-bottom:0':''}">
         <span class="pill">${j+1}º</span>
         ${posBadge(posOf(id), true)}
-        <div class="grow"><button class="lnk name" onclick="luOpen(${id})">${pname(id)}${injIcon(id)}${tag(id)}</button><div class="small muted">${sub(id)}</div>${injLine(id)}${gamesLine(T,id)}</div>
+        <div class="grow"><button class="lnk name" onclick="luOpen(${id})">${pname(id)}${injIcon(id)}${tag(id)}</button><div class="small muted">${sub(id)}</div>${injLine(id)}${formLine(id)}${gamesLine(T,id)}</div>
         <div style="width:100%;display:flex;gap:6px;justify-content:flex-end">
         <button class="tg" onclick="luMove(${id},-1)" ${i===1?'disabled':''} aria-label="Subir prioridad">▲</button>
         <button class="tg" onclick="luMove(${id},1)" ${i===L.bench.length-1?'disabled':''} aria-label="Bajar prioridad">▼</button>
