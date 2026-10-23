@@ -89,6 +89,13 @@ details.rival .chev{display:inline-block;transition:transform .15s}
 .rx button{background:var(--surface2);color:var(--text);border:1px solid var(--line);border-radius:99px;padding:3px 9px;font-size:13px;font-weight:500;line-height:1.3}
 .rx button.on{border-color:var(--accent);background:rgba(242,140,40,.15)}
 .rx button.add{color:var(--muted)}
+.imp{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}
+.imp .who{display:inline-flex;align-items:center;gap:5px;background:#2a1414;border:1px solid #6b2a26;color:#ffb4ac;border-radius:99px;padding:2px 9px 2px 2px;font-size:12px;font-weight:700;letter-spacing:.02em}
+.imp button{background:transparent;color:#ffb4ac;border:1px dashed #6b2a26;border-radius:99px;padding:3px 10px;font-size:12px;font-weight:700}
+.imp button.on{background:#e5534b;color:#fff;border-style:solid;border-color:#e5534b}
+.trib{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.trib .name{white-space:normal;overflow-wrap:anywhere}
+.trib .cell{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center}
 .wall{max-height:380px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
   mask-image:linear-gradient(to bottom,#000 85%,transparent);-webkit-mask-image:linear-gradient(to bottom,#000 85%,transparent);padding-bottom:24px}
 .bell{position:relative;background:transparent;border:0;width:40px;height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center}
@@ -969,7 +976,7 @@ async function loadNotis(){
   S.notiSeen = since; S.unread = S.notis.filter(x => new Date(x.created_at) > since).length;
   const b = $('#bellN'); if(b){ b.textContent = S.unread > 9 ? '9+' : S.unread; b.classList.toggle('hidden', !S.unread); }
 }
-const NICON = { comi:'📣', org:'🏀', offer:'🤝', deal:'✅', room:'⚔️', frozen:'🧊', pedradas:'🔮', lineup:'📋' };
+const NICON = { impugno:'⚖️', comi:'📣', org:'🏀', offer:'🤝', deal:'✅', room:'⚔️', frozen:'🧊', pedradas:'🔮', lineup:'📋' };
 async function viewNotis(){
   $('#tab').innerHTML = '<p class="muted" style="margin-top:14px">Cargando…</p>';
   await loadNotis(); if(S.view !== 'notis') return;
@@ -1333,6 +1340,39 @@ async function doReact(type, id, e){
   if(error) return fail(error);
   await loadRx(); rxRedraw();
 }
+// ---------- Impugno! (una por persona y sentencia; lo propio no se impugna) ----------
+const IMP_KINDS = { signing: d => d.user, deal: d => d.keeper, week_final: d => d.winner };
+const impTarget = p => p.kind === 'arcade' ? p.user_id : IMP_KINDS[p.kind] ? IMP_KINDS[p.kind](p.data || {}) : null;
+async function loadImp(){
+  const { data } = await sb.from('impugnos').select('post_id,user_id,active').eq('league_id', S.league.id).eq('active', true).order('created_at');
+  const m = {}; (data || []).forEach(r => (m[r.post_id] = m[r.post_id] || []).push(r.user_id)); S.imp = m;
+}
+function impBar(p){
+  const t = impTarget(p); if(!t) return '';
+  const who = (S.imp || {})[p.id] || [], mine = who.includes(S.user.id);
+  const chips = who.map(u => `<span class="who" title="${esc(member(u).team)} impugna">${avatar(u, 18)}Impugno!</span>`).join('');
+  const btn = t === S.user.id ? '' : `<button class="${mine?'on':''}" onclick="doImp(${p.id})">${mine ? '⚖️ Impugnado · retirar' : '⚖️ Impugno'}</button>`;
+  return chips || btn ? `<div class="imp">${chips}${btn}</div>` : '';
+}
+async function doImp(id){
+  const { data, error } = await sb.rpc('impugnar', { p_post:id });
+  if(error) return fail(error);
+  toast(data ? '¡Impugnado! Ya le ha llegado el aviso.' : 'Impugnación retirada');
+  await loadImp(); if(S.tab === 'hoy' && !S.view) renderHome();
+}
+async function tribunalCard(){
+  const { data } = await sb.rpc('tribunal', { p_league:S.league.id }); if(!data) return '';
+  const mes = new Date(data.month + 'T12:00').toLocaleDateString('es-ES', { month:'long' });
+  const cell = (title, arr, verb) => { const top = arr[0];
+    const tied = top ? arr.filter(x => x.n === top.n) : [];
+    return `<div class="cell"><div class="small muted">${title}</div>${top ? `<div style="display:flex;justify-content:center;gap:4px;margin:6px 0 4px">${tied.map(x => avatar(x.u, 34)).join('')}</div>
+      <div class="name" style="font-size:14px">${tied.map(x => esc(member(x.u).team)).join(' y ')}</div><div class="small muted">${top.n} ${verb}</div>` : '<div class="small muted" style="margin-top:8px">Nadie todavía</div>'}</div>`; };
+  const pv = data.prev || {}, pm = pv.month ? new Date(pv.month).toLocaleDateString('es-ES', { month:'long' }) : '';
+  const prevTxt = pv.impugnado || pv.fiscal ? `<p class="small muted" style="margin:8px 0 0">En ${pm}: ${pv.impugnado ? `impugnado, <b style="color:var(--text)">${esc(member(pv.impugnado.u).team)}</b>` : ''}${pv.impugnado && pv.fiscal ? ' · ' : ''}${pv.fiscal ? `fiscal, <b style="color:var(--text)">${esc(member(pv.fiscal.u).team)}</b>` : ''}.</p>` : '';
+  return `<div class="card"><div class="between" style="margin-bottom:8px"><div class="name">⚖️ Tribunal de ${mes}</div><span class="small muted">honorífico</span></div>
+    <div class="trib">${cell('Impugnado del mes', data.impugnados || [], 'impugnadas')}${cell('Fiscal del mes', data.fiscales || [], 'impugnaciones')}</div>
+    ${prevTxt}<p class="small muted" style="margin:8px 0 0">Se impugnan fichajes, acuerdos, récords del arcade y la victoria de cada jornada desde el Trash Talk. Lo tuyo no se puede impugnar.</p></div>`;
+}
 function postHTML(p){
   const when = new Date(p.created_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}), d = p.data || {};
   const team = uid => esc(member(uid).team);
@@ -1343,9 +1383,10 @@ function postHTML(p){
   else if(p.kind === 'frozen') txt = `<b>Negociación rota:</b> ${pname(d.player)} queda congelado y cada implicado paga 3M.`;
   else if(p.kind === 'arcade') txt = `🕹️ <b>${esc(d.initials)}</b> (${team(p.user_id)}) bate el récord del arcade: <b>${Number(d.score).toLocaleString('es-ES')}</b>${d.prev_score ? ` · adiós al ${Number(d.prev_score).toLocaleString('es-ES')} de ${d.prev_initials ? esc(d.prev_initials) : team(d.prev_user)}` : ''}.`;
   else if(p.kind === 'signing') txt = `<b>Fichaje:</b> ${team(d.user)} incorpora a <b>${pname(d.player)}</b> y suelta a ${pname(d.out)}.`;
+  else if(p.kind === 'week_final') txt = `🏆 <b>Jornada ${d.week} · resultado final</b><br>${(d.rows || []).map(r => `${r.r}º ${team(r.u)} <b>${fmtP(r.t)}</b>`).join(' · ')}`;
   else if(p.kind === 'drafteados') txt = d.none ? `<b>Jornada ${d.week} cerrada sin quinteto de Drafteados.</b> Esta semana nadie suma el +2.` : `<b>Quinteto Drafteados · jornada ${d.week}:</b> ${(d.players||[]).map(pname).join(', ')}. +2 a cada uno. Jornada cerrada.`;
   else return '';
-  return `<li style="align-items:flex-start"><span class="pill accent" style="flex-shrink:0;margin-top:2px">Liga</span><div class="grow"><div>${txt}</div><div class="small muted">${when}</div>${rxBar('post', p.id)}</div></li>`;
+  return `<li style="align-items:flex-start"><span class="pill accent" style="flex-shrink:0;margin-top:2px">Liga</span><div class="grow"><div>${txt}</div><div class="small muted">${when}</div>${rxBar('post', p.id)}${impBar(p)}</div></li>`;
 }
 async function wallSend(e){ e.preventDefault(); const i = $('#wmsg'), v = i.value.trim(); if(!v) return;
   const { error } = await sb.rpc('post_wall', { p_league:S.league.id, p_body:v });
@@ -1448,7 +1489,7 @@ async function renderHome(){
     sb.from('nba_transactions').select('*').order('happened_at', { ascending:false }).range(0, 79),
     sb.from('predictions').select('award').eq('league_id', lid).eq('user_id', me),
     sb.from('league_posts').select('*').eq('league_id', lid).order('created_at', { ascending:false }).range(0, 49),
-    loadRx(), loadIntel(), (S.weekView = null, loadScores())
+    loadRx(), loadImp(), loadIntel(), (S.weekView = null, loadScores())
   ]);
   const posts = wl.data || [];
   const draftMsg = $('#wmsg')?.value || '', wallTop = document.querySelector('.wall')?.scrollTop || 0;
@@ -1530,14 +1571,14 @@ function attachTypeahead(input, pool){
 // ---------- Predicciones ----------
 async function renderPred(){
   $('#tab').innerHTML = '<p class="muted">Cargando…</p>';
-  const [{ data, error }] = await Promise.all([sb.from('predictions').select('*').eq('league_id', S.league.id), S.league.draft_status === 'cerrado' ? arcLoad() : null]);
+  const [{ data, error }, , trib] = await Promise.all([sb.from('predictions').select('*').eq('league_id', S.league.id), S.league.draft_status === 'cerrado' ? arcLoad() : null, S.league.draft_status === 'cerrado' ? tribunalCard() : '']);
   if(error) return fail(error); if(S.tab !== 'pred' || S.view) return;
   const closeAt = S.league.predictions_close_at ? new Date(S.league.predictions_close_at) : null;
   const closed = closeAt && new Date() >= closeAt;
   const mine = Object.fromEntries(data.filter(d=>d.user_id===S.user.id).map(d=>[d.award,d]));
   const opts = (rookie) => S.players.filter(p=>!rookie||p.rookie).map(p=>`<option value="${esc(p.name)} · ${p.team}">`).join('');
   $('#tab').innerHTML = `
-    ${S.league.draft_status === 'cerrado' ? `<h2>Arcade</h2>${arcadeCard()}<h2>Pedradas de temporada</h2>` : ''}
+    ${S.league.draft_status === 'cerrado' ? `<h2>Tribunal</h2>${trib || ''}<h2>Arcade</h2>${arcadeCard()}<h2>Pedradas de temporada</h2>` : ''}
     <p class="muted small">${closed ? 'Pedradas cerradas.' : 'Se cierran el ' + (closeAt ? closeAt.toLocaleString('es-ES',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}) : '—') + '. Cada acierto: 3 puntos de liga. Podéis repetir jugador.'}</p>
     <form id="fp" class="card">
       ${AWARDS.map(([k,t])=>{
