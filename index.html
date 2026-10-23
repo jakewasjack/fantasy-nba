@@ -49,6 +49,12 @@ button:disabled{opacity:.35;cursor:not-allowed}
 .clock.mini{padding:9px 14px;font-weight:500}
 .clock.mini .cdl{font-size:18px;font-variant-numeric:tabular-nums}
 details.rival summary::-webkit-details-marker{display:none}
+.inj{display:inline-block;width:15px;height:15px;vertical-align:-2px;margin-left:6px;flex:none}
+.form{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:4px}
+.fc{min-width:24px;height:20px;padding:0 4px;border-radius:5px;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums;background:var(--surface2);color:var(--text);border:1px solid var(--line)}
+.fc.up{background:var(--ok);border-color:var(--ok);color:#0b1f15}
+.fc.down{background:var(--bad);border-color:var(--bad);color:#fff}
+.fc.dnp{background:transparent;color:var(--muted);border-style:dashed}
 .rsum{display:flex;align-items:center;gap:10px;cursor:pointer;list-style:none}
 .rsum>*{flex:none}.rsum .rname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 details.rival[open] .chev{transform:rotate(180deg)}
@@ -506,6 +512,7 @@ async function loadTD(force){
   const w = await sb.rpc('open_week', { p_season: SEASON });
   const week = w.data && w.data.week_no ? w.data : null;
   const none = Promise.resolve({ data: [] });
+  const intel = loadIntel();
   const [ro, rq, rs, lm, lu, wg, pv, plu] = await Promise.all([
     sb.from('rosters').select('player_id,user_id,price_paid_m').eq('league_id', lid),
     week ? sb.from('transfer_requests').select('*').eq('league_id', lid).eq('week_no', week.week_no).order('created_at') : none,
@@ -517,6 +524,7 @@ async function loadTD(force){
     week ? sb.from('lineups').select('*').eq('league_id', lid).eq('user_id', me).lt('week_no', week.week_no).order('week_no', { ascending:false }).limit(1) : Promise.resolve({ data: [] })
   ]);
   if(ro.error){ fail(ro.error); return null; }
+  await intel;
   const games = {}; (wg.data || []).forEach(x => games[x.team] = x);
   const owner = {}; ro.data.forEach(r => owner[r.player_id] = r.user_id);
   const paid = {}; ro.data.filter(r => r.user_id === me).forEach(r => paid[r.player_id] = r.price_paid_m);
@@ -570,6 +578,32 @@ async function renderTeam(){
   }
   if(S.tab === 'equipo') drawTeam();
 }
+// ---------- Lesiones y forma reciente ----------
+S.inj = {}; S.form = {}; S.intelAt = 0;
+async function loadIntel(){
+  if(Date.now() - S.intelAt < 600000) return;
+  try {
+    const [ij, fm] = await Promise.all([ sb.from('player_injuries').select('*').eq('active', true), sb.rpc('recent_form') ]);
+    if(ij.data){ S.inj = {}; ij.data.forEach(r => S.inj[r.player_id] = r); }
+    if(fm.data){ S.form = {}; fm.data.forEach(r => S.form[r.player_id] = r.games || []); }
+    S.intelAt = Date.now();
+  } catch(e){}
+}
+const BODY = { Achilles:'Aquiles', Ankle:'tobillo', Back:'espalda', Calf:'gemelo', Concussion:'conmoción', Foot:'pie', Hamstring:'isquiotibial', Heel:'talón', Hip:'cadera', Illness:'enfermedad', Knee:'rodilla', Mouth:'boca', Oblique:'oblicuo', Personal:'motivos personales', Quadriceps:'cuádriceps', Shoulder:'hombro', Thumb:'pulgar', Wrist:'muñeca', Hand:'mano', Finger:'dedo', Toe:'dedo del pie', Elbow:'codo', Groin:'ingle', Neck:'cuello', Rest:'descanso', Eye:'ojo', Nose:'nariz', Chest:'pecho', Abdomen:'abdomen', Leg:'pierna', Shin:'tibia', Rib:'costilla', Face:'cara', Head:'cabeza', 'Not Injury Related':'no es lesión', Suspension:'sanción' };
+const injOut = r => /out/i.test(r.status);
+function injIcon(id){ const r = S.inj[id]; if(!r) return '';
+  return `<svg class="inj" viewBox="0 0 16 16" role="img" aria-label="${injOut(r)?'Lesionado, baja':'Lesionado, duda'}"><title>${esc(injText(r))}</title><rect x=".5" y=".5" width="15" height="15" rx="3.5" fill="#fff" stroke="${injOut(r)?'#e5534b':'#f2a33a'}"/><path d="M6.4 3h3.2v3.4H13v3.2H9.6V13H6.4V9.6H3V6.4h3.4z" fill="${injOut(r)?'#e5534b':'#f2a33a'}"/></svg>`; }
+function injText(r){ const bp = BODY[r.body_part] || (r.body_part||'').toLowerCase();
+  const ret = r.return_date && injOut(r) && new Date(r.return_date) >= new Date(new Date().toDateString()) ? ' · vuelve ~' + new Date(r.return_date + 'T12:00').toLocaleDateString('es-ES', { day:'numeric', month:'short' }) : '';
+  return (injOut(r) ? 'Baja' : 'Duda') + (bp ? ' · ' + bp : '') + ret; }
+function injLine(id){ const r = S.inj[id]; if(!r) return '';
+  return `<div class="small" style="color:${injOut(r)?'var(--bad)':'#f2a33a'};font-weight:600">${esc(injText(r))}</div>`; }
+function formLine(id){ const g = S.form[id]; if(!g || !g.length) return '';
+  const fp = S.byId[id]?.fp, played = g.filter(x => x.fp != null).map(x => x.fp);
+  const cls = v => v == null ? 'dnp' : !fp ? '' : v >= fp * 1.15 ? 'up' : v <= fp * 0.85 ? 'down' : '';
+  const avg = played.length ? Math.round(played.reduce((a,b)=>a+b,0) / played.length) : null;
+  const arrow = avg == null || !fp ? '' : avg >= fp * 1.15 ? ' <b style="color:var(--ok)">▲</b>' : avg <= fp * 0.85 ? ' <b style="color:var(--bad)">▼</b>' : ' <span class="muted">=</span>';
+  return `<div class="form"><span class="small muted" style="margin-right:2px">${avg == null ? 'no ha jugado' : 'ahora ' + avg}${arrow}</span><span style="display:inline-flex;gap:4px">${g.map(x => `<span class="fc ${cls(x.fp)}" title="${new Date(x.d+'T12:00').toLocaleDateString('es-ES',{day:'numeric',month:'short'})}">${x.fp == null ? '–' : x.fp}</span>`).join('')}</span></div>`; }
 function adaptLineup(src, ids){
   const st = src.starters.map(Number), bn = src.bench_order.map(Number); let c = src.captain_id, vc = src.vice_captain_id;
   const free = ids.filter(id => !st.includes(id) && !bn.includes(id));
@@ -601,7 +635,7 @@ function drawTeam(){
     <ul class="list card" style="padding:0 14px">
       ${L.starters.slice().sort((a,b)=>posRank(a)-posRank(b)).map(id=>`<li style="${L.open===id?'border-bottom:0':''}">
         ${posBadge(posOf(id))}
-        <div class="grow"><button class="lnk name" onclick="luOpen(${id})">${pname(id)}${tag(id)}</button><div class="small muted">${id===L.c?'<b style="color:var(--accent)">Capitán ×2</b> · ':id===L.vc?'<b style="color:var(--text)">Vicecapitán</b> · ':''}${sub(id)}</div>${gamesLine(T,id)}</div>
+        <div class="grow"><button class="lnk name" onclick="luOpen(${id})">${pname(id)}${injIcon(id)}${tag(id)}</button><div class="small muted">${id===L.c?'<b style="color:var(--accent)">Capitán ×2</b> · ':id===L.vc?'<b style="color:var(--text)">Vicecapitán</b> · ':''}${sub(id)}</div>${injLine(id)}${gamesLine(T,id)}</div>
         ${L.pending ? `<button class="sm" onclick="luSwap(${id})">Sale</button>` : `
           <button class="tg ${id===L.c?'on':''}" onclick="luCap(${id})" aria-label="Hacer capitán">C</button>
           <button class="tg ${id===L.vc?'on':''}" onclick="luVice(${id})" aria-label="Hacer vicecapitán">VC</button>
@@ -615,7 +649,7 @@ function drawTeam(){
       ${L.bench.slice(0,1).map(id=>`<li style="${L.open===id?'border-bottom:0':''}">
         <span class="pill accent">6º</span>
         ${posBadge(posOf(id), true)}
-        <div class="grow"><button class="lnk name" onclick="luOpen(${id})">${pname(id)}${tag(id)}</button><div class="small muted">${sub(id)}</div>${gamesLine(T,id)}</div>
+        <div class="grow"><button class="lnk name" onclick="luOpen(${id})">${pname(id)}${injIcon(id)}${tag(id)}</button><div class="small muted">${sub(id)}</div>${injLine(id)}${gamesLine(T,id)}</div>
         <button class="tg" onclick="luStart(${id})" aria-label="Hacer titular">↑</button>
       </li>${strip(id)}`).join('') || '<li class="muted">Elige un sexto hombre desde el banquillo (botón Sexto)</li>'}
     </ul>
@@ -624,7 +658,7 @@ function drawTeam(){
       ${L.bench.slice(1).map((id,j)=>{ const i = j+1; return `<li style="flex-wrap:wrap;${L.open===id?'border-bottom:0':''}">
         <span class="pill">${j+1}º</span>
         ${posBadge(posOf(id), true)}
-        <div class="grow"><button class="lnk name" onclick="luOpen(${id})">${pname(id)}${tag(id)}</button><div class="small muted">${sub(id)}</div>${gamesLine(T,id)}</div>
+        <div class="grow"><button class="lnk name" onclick="luOpen(${id})">${pname(id)}${injIcon(id)}${tag(id)}</button><div class="small muted">${sub(id)}</div>${injLine(id)}${gamesLine(T,id)}</div>
         <div style="width:100%;display:flex;gap:6px;justify-content:flex-end">
         <button class="tg" onclick="luMove(${id},-1)" ${i===1?'disabled':''} aria-label="Subir prioridad">▲</button>
         <button class="tg" onclick="luMove(${id},1)" ${i===L.bench.length-1?'disabled':''} aria-label="Bajar prioridad">▼</button>
@@ -681,6 +715,7 @@ async function renderMarket(){
   if(S.league.draft_status !== 'cerrado'){ $('#tab').innerHTML = '<div class="clock wait">El mercado se abre al terminar el draft.</div>'; return; }
   const M = mkState(); ['q','team','pos'].forEach(k => M[k] = M[k] || ''); if(!M.sort) M.sort = 'media'; if(M.affordable === undefined) M.affordable = true;
   if(!S.td){ $('#tab').innerHTML = '<p class="muted">Cargando…</p>'; if(!await loadTD()) return; }
+  await loadIntel();
   if(S.tab !== 'mercado') return;
   if(S.room) return drawRoom();
   drawMarket();
@@ -724,7 +759,7 @@ function drawMarket(){
       <h2>¿Quién sale por ${pname(M.inn)}? <span class="small muted">· cuesta ${price(M.inn)}M</span></h2>
       <p class="small muted">Elige a quién sueltas. Arriba, los que te dan presupuesto suficiente.</p>
       <ul class="list card" style="padding:0 14px">${canOut.slice().sort((a,b)=>{ const oa = T.bal+(T.paid[a]||0)-price(M.inn)>=0, ob = T.bal+(T.paid[b]||0)-price(M.inn)>=0; return (ob-oa) || (S.byId[a]?.fp??-1)-(S.byId[b]?.fp??-1); }).map(id=>{ const ok = T.bal + (T.paid[id]||0) - price(M.inn) >= 0; return `<li>
-        <div class="grow"><div class="name">${pname(id)}</div><div class="small muted">${posBadge(posOf(id),1)} recuperas ${T.paid[id]}M${S.byId[id]?.fp!=null?' · '+Number(S.byId[id].fp).toFixed(1)+' FPPG':''}${ok?'':' · <span style="color:var(--bad)">te faltarían '+(price(M.inn)-T.bal-(T.paid[id]||0))+'M</span>'}</div></div>
+        <div class="grow"><div class="name">${pname(id)}${injIcon(id)}</div><div class="small muted">${posBadge(posOf(id),1)} recuperas ${T.paid[id]}M${S.byId[id]?.fp!=null?' · '+Number(S.byId[id].fp).toFixed(1)+' FPPG':''}${ok?'':' · <span style="color:var(--bad)">te faltarían '+(price(M.inn)-T.bal-(T.paid[id]||0))+'M</span>'}</div></div>
         <button class="sm" ${ok?'':'disabled'} onclick="mkConfirm(${id},${M.inn})">${M.armed===id?'Confirmar':'Sale'}</button></li>`}).join('')}</ul>
       <button class="ghost" style="width:100%" onclick="mkReset()">Cancelar</button>` : `
     ${M.out ? `<div class="clock">Buscas sustituto para ${pname(M.out)} · recuperas ${T.paid[M.out]}M · puedes pagar hasta ${maxPrice}M <a href="#" onclick="mkReset();return false" style="color:inherit;margin-left:6px">Cancelar</a></div>` : ''}
@@ -744,8 +779,9 @@ function drawMarket(){
       ${list.map(p=>{ const others = (reqBy[p.id]||[]).filter(t=>t.user_id!==me); const rsv = resBy[p.id]; const blocked = rsv && rsv !== me; const g = T.games[p.team];
         return `<li>
         <span class="price">${p.price}M</span>
-        <div class="grow"><div class="name">${esc(p.name)}</div>
+        <div class="grow"><div class="name">${esc(p.name)}${injIcon(p.id)}</div>
           <div class="small muted">${posBadge(p.pos,1)} ${p.team}${p.fp!=null?' · '+Number(p.fp).toFixed(1)+' FPPG':''}${p.rookie?' · <span class="pill ok">rookie</span>':''} · ${g?g.n+' part.':'sin partidos'}</div>
+          ${injLine(p.id)}${formLine(p.id)}
           ${others.length ? `<div class="small" style="color:var(--accent)">En disputa entre ${others.map(t=>esc(member(t.user_id).team)).join(' y ')} · <a href="#" onclick="openRoom(${p.id});return false" style="color:inherit">ver la mesa</a></div>` : ''}
           ${rsv ? `<div class="small" style="color:${blocked?'var(--bad)':'var(--ok)'}">${blocked ? 'Reservado esta jornada para ' + esc(member(rsv).team) : 'Reservado para ti esta jornada'}</div>` : ''}</div>
         <button class="sm" ${blocked || p.price > maxPrice ? 'disabled' : ''} onclick="mkPick(${p.id})">${M.out && M.armed===p.id ? 'Confirmar' : 'Fichar'}</button>
@@ -1180,6 +1216,7 @@ function viewRules(){
       ${row('Impacto: +/− del partido × (minutos ÷ 36)','máx. ±8')}
     </ul></div>
     <p class="small muted"><b style="color:var(--text)">FPPG</b> (fantasy points per game): media de puntos fantasy por partido de la temporada pasada, calculada con esta tabla. Si un jugador jugó pocos partidos se mezcla con la temporada anterior. Los rookies no tienen FPPG.</p>
+    <p class="small muted"><b style="color:var(--text)">Forma reciente</b>: en el mercado, los puntos fantasy de los últimos 5 partidos de su equipo. Verde si supera su FPPG en un 15 % o más, rojo si queda un 15 % o más por debajo, y «–» si su equipo jugó y él no. <b style="color:var(--text)">Cruz roja</b>: baja oficial; <b style="color:#f2a33a">cruz naranja</b>: duda (día a día). Fuente: parte de lesiones de ESPN, se actualiza cada hora.</p>
     <h2>Tu equipo</h2>
     <div class="card small">
       <p><b>Plantilla de 10</b>, con al menos un rookie. Cada jugador solo puede estar en un equipo de la liga.</p>
@@ -1364,13 +1401,13 @@ function slotRow(sl, closed){
   if(g) sub = `${g}${of} ${(tot||g)===1?'partido':'partidos'} · media ${fmtP(sl.avg)}`;
   else if(!closed && tot) sub = `aún no ha jugado · ${tot} ${tot===1?'partido':'partidos'} esta semana${sl.by ? ` · de momento entra <b style="color:var(--text)">${name(sl.by)}</b>` : ''}`;
   else sub = sl.by ? `no jugó · entra <b style="color:var(--text)">${name(sl.by)}</b>` : 'no jugó · sin suplente válido';
-  return `<li style="padding:6px 0">${posBadge(posOf(sl.player),1)}<div class="grow"><div class="name" style="font-size:14px">${name(sl.player)}${sl.slot==='sexto'?' <span class="pill">6º</span>':''}${sl.mult===2?' <span class="pill accent">×2</span>':''}</div>
+  return `<li style="padding:6px 0">${posBadge(posOf(sl.player),1)}<div class="grow"><div class="name" style="font-size:14px">${name(sl.player)}${injIcon(sl.player)}${sl.slot==='sexto'?' <span class="pill">6º</span>':''}${sl.mult===2?' <span class="pill accent">×2</span>':''}</div>
     <div class="small muted">${sub}${sl.bonus ? ' · <b style="color:var(--accent)">+2 Drafteados</b>' : ''}</div></div>
     <span class="price">${fmtP(sl.points + (sl.bonus||0))}</span></li>`;
 }
 function benchRow(b, closed){
   const tot = gamesInfo(b.player), g = b.games || 0, of = tot && !closed ? ` de ${tot}` : '';
-  return `<li style="padding:6px 0;opacity:.8">${posBadge(posOf(b.player),1)}<div class="grow"><div class="name" style="font-size:14px">${pname(b.player)} <span class="pill">banquillo</span></div>
+  return `<li style="padding:6px 0;opacity:.8">${posBadge(posOf(b.player),1)}<div class="grow"><div class="name" style="font-size:14px">${pname(b.player)}${injIcon(b.player)} <span class="pill">banquillo</span></div>
     <div class="small muted">${g ? `${g}${of} ${(tot||g)===1?'partido':'partidos'} · media ${fmtP(b.avg)} · suma el 20%` : (!closed && tot ? `aún no ha jugado · ${tot} ${tot===1?'partido':'partidos'} esta semana` : 'no jugó')}</div></div><span class="price">${fmtP(b.points)}</span></li>`;
 }
 function lineupList(x){ const d = x.detail || {};
@@ -1411,7 +1448,7 @@ async function renderHome(){
     sb.from('nba_transactions').select('*').order('happened_at', { ascending:false }).range(0, 79),
     sb.from('predictions').select('award').eq('league_id', lid).eq('user_id', me),
     sb.from('league_posts').select('*').eq('league_id', lid).order('created_at', { ascending:false }).range(0, 49),
-    loadRx(), (S.weekView = null, loadScores())
+    loadRx(), loadIntel(), (S.weekView = null, loadScores())
   ]);
   const posts = wl.data || [];
   const draftMsg = $('#wmsg')?.value || '', wallTop = document.querySelector('.wall')?.scrollTop || 0;
