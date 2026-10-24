@@ -1456,7 +1456,7 @@ async function viewComm(){
 
 // ---------- Muro (Trash Talk) ----------
 // ---------- Reacciones (una por persona y elemento) ----------
-const RX = ['🔥','😂','😱','👏','🤡','🧠'];
+const RX = ['🔥','😂','😱','👏','🤡','🧠','🖕'];
 async function loadRx(){
   const { data } = await sb.from('reactions').select('target_type,target_id,user_id,emoji').eq('league_id', S.league.id);
   const m = {}; (data || []).filter(r => r.emoji).forEach(r => { const k = r.target_type + ':' + r.target_id; (m[k] = m[k] || { c:{}, mine:null }).c[r.emoji] = (m[k].c[r.emoji] || 0) + 1; if(r.user_id === S.user.id) m[k].mine = r.emoji; });
