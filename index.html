@@ -1571,6 +1571,8 @@ async function loadScores(){
   ]);
   S.lt = lt.data || []; S.ws = ws.data || []; S.wsWeek = wk;
   S.wsLive = {}; (wl.data || []).forEach(x => S.wsLive[x.user_id] = x);
+  const wsw = (S.sw || []).find(x => x.week_no === wk); S.confUntil = null;
+  if(wsw){ try { const { data } = await sb.from('player_day_hustle').select('game_date').gte('game_date', wsw.starts_on).lte('game_date', wsw.ends_on).order('game_date', { ascending:false }).limit(1); S.confUntil = data && data[0] ? data[0].game_date : null; } catch(e){} }
   await loadWeekGames(wk);
 }
 // Partidos de cada equipo NBA en la semana: total y ya jugados
@@ -1617,14 +1619,14 @@ function bdHTML(allGames, ds, live){
   const f = n => (n > 0 ? '+' : n < 0 ? '−' : '') + fmtP(Math.abs(n));
   const dia = d => new Date(d + 'T12:00').toLocaleDateString('es-ES', { weekday:'short', day:'numeric' });
   const sub = ds.sub ? `<p class="small" style="margin:0 0 6px">${pname(+ds.sub)} no ha jugado esta semana: puntúa en su lugar <b>${pname(+ds.p)}</b>.</p>` : '';
-  const pendHTML = pend.length ? `<p class="small" style="margin:8px 0 0;color:#7fd3ff">En directo, aún no cuenta: ${pend.map(g => `${dia(g.d)} ${fmtP(g.fp)}`).join(' · ')}. Se suma a la oficial por la mañana.</p>` : '';
-  if(!games.length) return sub + '<p class="small muted" style="margin:0">Todavía no tiene partidos oficiales esta semana.</p>' + pendHTML;
+  const pendHTML = pend.length ? `<p class="small" style="margin:8px 0 0;color:#7fd3ff">En directo, aún no cuenta: ${pend.map(g => `${dia(g.d)} ${fmtP(g.fp)}`).join(' · ')}. Se confirma por la mañana.</p>` : '';
+  if(!games.length) return sub + '<p class="small muted" style="margin:0">Todavía no tiene partidos confirmados esta semana.</p>' + pendHTML;
   const rows = games.map(gm => { const parts = (gm.parts || []).filter(p => Math.abs(+p[1]) >= 0.05);
     const L = gm.line || {};
     return `<div class="bdg"><div class="between"><span class="small"><b>${dia(gm.d)}</b> · ${gm.opp.startsWith('@') ? 'en ' + gm.opp.slice(1) : 'vs ' + gm.opp} · ${gm.min} min</span><b>${fmtP(gm.fp)}</b></div>
       <div class="small muted" style="margin:2px 0 4px">${L.pts} pts · ${L.reb} reb · ${L.ast} ast · ${L.stl} rob · ${L.blk} tap · ${L.tov} pérd · TC ${L.fg} · TL ${L.ft} · ${L.pm > 0 ? '+' : ''}${L.pm ?? 0}</div>
       <div class="bdparts">${parts.map(p => `<span class="${+p[1] >= 0 ? 'bp' : 'bn'}">${esc(p[0])} <b>${f(+p[1])}</b></span>`).join('')}</div>
-      ${gm.official === false ? '<div class="small" style="margin-top:4px;color:#7fd3ff">En directo: falta el esfuerzo, se hace oficial por la mañana.</div>' : ''}</div>`; }).join('');
+      ${gm.official === false ? '<div class="small" style="margin-top:4px;color:#7fd3ff">En directo: falta el esfuerzo, se confirma por la mañana.</div>' : ''}</div>`; }).join('');
   const sum = games.reduce((a, g) => a + (+g.fp), 0), avg = sum / games.length, m = +ds.m, b = +ds.b;
   const formula = `Media: ${games.length > 1 ? '(' + games.map(g => fmtP(g.fp)).join(' + ') + ') ÷ ' + games.length + ' = ' : ''}<b>${fmtP(avg)}</b>`
     + (ds.k === 'bench' ? ` · en el banquillo suma el 20% = <b>${fmtP(+ds.pts)}</b>` : m === 2 ? ` · ×2 capitán = <b>${fmtP(avg * 2)}</b>` : '')
@@ -1633,12 +1635,12 @@ function bdHTML(allGames, ds, live){
 }
 function lineupList(x, live){ const d = x.detail || {};
   return `<ul class="list" style="margin-top:6px" data-live="${live?1:0}">${(d.slots||[]).map(sl => slotRow(sl, d.closed)).join('')}${(d.bench_slots||[]).filter(b => !b.used).map(b => benchRow(b, d.closed)).join('')}</ul>`; }
-// Oficial (días con el esfuerzo cargado) frente a en directo (incluye partidos aún no oficiales)
+// Confirmados (días con el esfuerzo cargado) frente a en directo (incluye partidos aún sin confirmar)
 S.gtMode = {};
 const liveDiff = x => { const l = (S.wsLive || {})[x.user_id]; return l && l.total != null && x.total != null ? +l.total - +x.total : 0; };
 function gtBody(uid){
   const x = S.ws.find(r => r.user_id === uid), l = (S.wsLive || {})[uid], dif = liveDiff(x), live = S.gtMode[uid] === 'live' && l;
-  return `${Math.abs(dif) >= 0.05 ? `<div class="seg" style="margin-top:8px"><button class="${live?'':'on'}" onclick="gtSwitch('${uid}','of')">Oficial · ${fmtP(x.total)}</button><button class="${live?'on':''}" onclick="gtSwitch('${uid}','live')">En directo · ${fmtP(l.total)}</button></div>` : ''}
+  return `${Math.abs(dif) >= 0.05 ? `<div class="seg" style="margin-top:8px"><button class="${live?'':'on'}" onclick="gtSwitch('${uid}','of')">Confirmados · ${fmtP(x.total)}</button><button class="${live?'on':''}" onclick="gtSwitch('${uid}','live')">En directo · ${fmtP(l.total)}</button></div>` : ''}
     ${lineupList(live ? l : x, live)}`;
 }
 function gtSwitch(uid, m){ S.gtMode[uid] = m; const el = document.querySelector(`.gtbody[data-u="${uid}"]`); if(el) el.innerHTML = gtBody(uid); }
@@ -1648,20 +1650,20 @@ function jornadaCard(){
   const closed = S.ws.some(x => x.detail?.closed), me = S.user.id;
   const rows = S.ws.slice().sort((a,b) => (a.rank ?? 99) - (b.rank ?? 99));
   const pend = rows.find(x => x.user_id === me)?.detail?.pending_hustle;
-  return `<div class="between" style="margin:18px 0 8px"><h2 style="margin:0">Game Time! · Jornada ${S.wsWeek}</h2><span class="pill ${closed?'ok':'accent'}">${closed ? 'Final' : 'Provisional'}</span></div>
+  return `<div class="between" style="margin:18px 0 8px"><h2 style="margin:0">Game Time! · Jornada ${S.wsWeek}</h2><span class="pill ${closed?'ok':'accent'}" style="white-space:nowrap">${closed ? 'Final' : (() => { const w = (S.sw || []).find(x => x.week_no === S.wsWeek); return w ? 'En juego · termina el ' + new Date(w.ends_on + 'T12:00').toLocaleDateString('es-ES', { weekday:'short', day:'numeric' }) : 'En juego'; })()}</span></div>
     ${rows.map(x => { const mine = x.user_id === me; return `<details class="card rival" ${mine ? 'style="border-color:var(--accent)"' : ''}>
       <summary class="rsum">${x.rank ? `<span class="pill">${x.rank}º</span>` : ''}${avatar(x.user_id, 26)}<span class="rname"><span class="name">${esc(x.team_name)}${mine ? ' <span class="small muted">· tú</span>' : ''}</span>
         ${x.rank && x.league_pts != null ? `<br><span class="small muted"><b style="color:var(--accent)">+${x.league_pts}</b> ${x.league_pts===1?'punto':'puntos'} de liga</span>` : ''}</span>
         <span style="text-align:right"><span class="price">${x.total==null ? 'oculto' : fmtP(x.total)}</span>${Math.abs(liveDiff(x)) >= 0.05 ? `<br><span class="livechip">directo ${liveDiff(x) > 0 ? '+' : '−'}${fmtP(Math.abs(liveDiff(x)))}</span>` : ''}</span><span class="small muted chev">▾</span></summary>
       ${x.total==null ? '<p class="small muted">Se ve al cerrar la jornada.</p>' : `<div class="gtbody" data-u="${x.user_id}">${gtBody(x.user_id)}</div>`}</details>`; }).join('')}
-    ${!closed ? `<p class="small muted" style="margin:4px 2px 0">La cifra grande es la <b style="color:var(--text)">oficial</b>: solo cambia una vez al día, cuando se carga el esfuerzo de la noche anterior. «En directo» son los partidos que aún no cuentan; por la mañana pasan a la oficial. Toca un jugador para ver de dónde sale su media.</p>` : ''}`;
+    ${!closed ? `<p class="small muted" style="margin:4px 2px 0">La cifra grande son los <b style="color:var(--text)">puntos confirmados</b>${S.confUntil ? ' hasta el ' + new Date(S.confUntil + 'T12:00').toLocaleDateString('es-ES', { weekday:'long', day:'numeric' }) : ''}: se actualizan una vez al día, cuando se carga el esfuerzo de la noche anterior. «Directo» son partidos que aún no cuentan; se confirman por la mañana. Toca un jugador para ver de dónde sale su media.</p>` : ''}`;
 }
 function tableCard(){
   const rows = S.lt || [];
   return `<div class="card" style="padding:4px 14px"><ul class="list">
     ${rows.map((r,i) => `<li><span class="pill">${i+1}</span>${avatar(r.user_id, 30)}<div class="grow"><div class="name">${esc(r.team_name)}${r.user_id===S.user.id?' <span class="small muted">· tú</span>':''}</div>
       <div class="small muted">${r.weeks.length} ${r.weeks.length===1?'jornada':'jornadas'} · ${fmtP(r.fantasy_total)} pts fantasy</div></div><span class="price" title="Puntos de liga">${r.league_pts}</span></li>`).join('')}
-    </ul><p class="small muted" style="margin:6px 0 10px">${S.liveWeek ? 'Puntos de liga: jornadas (3·1·0)' + ' + premios del mes + pedradas. La jornada en juego cuenta como provisional.' : 'Los puntos empiezan a contar con la jornada 1.'}</p></div>`;
+    </ul><p class="small muted" style="margin:6px 0 10px">${S.liveWeek ? 'Puntos de liga: jornadas (3·1·0)' + ' + premios del mes + pedradas. La jornada en juego cuenta con sus puntos confirmados hasta ahora.' : 'Los puntos empiezan a contar con la jornada 1.'}</p></div>`;
 }
 function weekDetail(){
   if(!S.wsWeek) return '<p class="muted">Todavía no ha empezado ninguna jornada.</p>';
