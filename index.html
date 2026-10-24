@@ -89,6 +89,8 @@ details.rival .chev{display:inline-block;transition:transform .15s}
 .rx button{background:var(--surface2);color:var(--text);border:1px solid var(--line);border-radius:99px;padding:3px 9px;font-size:13px;font-weight:500;line-height:1.3}
 .rx button.on{border-color:var(--accent);background:rgba(242,140,40,.15)}
 .rx button.add{color:var(--muted)}
+.rx.pick{display:grid;grid-template-columns:repeat(5,44px);gap:6px}
+.rx.pick button{padding:5px 0;font-size:18px;text-align:center}
 .imp{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}
 .imp .who{display:inline-flex;align-items:center;gap:5px;background:#2a1414;border:1px solid #6b2a26;color:#ffb4ac;border-radius:99px;padding:2px 9px 2px 2px;font-size:12px;font-weight:700;letter-spacing:.02em}
 .imp button{background:transparent;color:#ffb4ac;border:1px dashed #6b2a26;border-radius:99px;padding:3px 10px;font-size:12px;font-weight:700}
@@ -1456,7 +1458,7 @@ async function viewComm(){
 
 // ---------- Muro (Trash Talk) ----------
 // ---------- Reacciones (una por persona y elemento) ----------
-const RX = ['🔥','😂','😱','👏','🤡','🧠','🖕'];
+const RX = ['🔥','😂','😱','👏','🤡','🧠','🖕','💩','🧂','🧱'];
 async function loadRx(){
   const { data } = await sb.from('reactions').select('target_type,target_id,user_id,emoji').eq('league_id', S.league.id);
   const m = {}; (data || []).filter(r => r.emoji).forEach(r => { const k = r.target_type + ':' + r.target_id; (m[k] = m[k] || { c:{}, mine:null }).c[r.emoji] = (m[k].c[r.emoji] || 0) + 1; if(r.user_id === S.user.id) m[k].mine = r.emoji; });
@@ -1466,7 +1468,7 @@ function rxBar(type, id){
   const k = type + ':' + id, r = (S.rx || {})[k] || { c:{}, mine:null }, open = S.rxOpen === k;
   const chips = RX.filter(e => r.c[e]).map(e => `<button class="${r.mine===e?'on':''}" onclick="doReact('${type}','${id}','${e}')">${e} ${r.c[e]}</button>`).join('');
   const picker = open ? RX.map(e => `<button class="${r.mine===e?'on':''}" onclick="doReact('${type}','${id}','${e}')" aria-label="Reaccionar ${e}">${e}</button>`).join('') : `<button class="add" onclick="S.rxOpen='${k}';rxRedraw()" aria-label="Reaccionar">☺ +</button>`;
-  return `<div class="rx">${open ? '' : chips}${picker}</div>`;
+  return `<div class="rx${open ? ' pick' : ''}">${open ? '' : chips}${picker}</div>`;
 }
 function rxRedraw(){ if(S.view) return; if(S.tab === 'draft') renderDraft(); else if(S.tab === 'hoy') renderHome(); }
 async function doReact(type, id, e){
