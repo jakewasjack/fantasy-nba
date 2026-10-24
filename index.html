@@ -609,8 +609,8 @@ function formLine(id){ const g = S.form[id]; if(!g || !g.length) return '';
   const fp = S.byId[id]?.fp, played = g.filter(x => x.fp != null).map(x => x.fp);
   const cls = v => v == null ? 'dnp' : !fp ? '' : v >= fp * 1.15 ? 'up' : v <= fp * 0.85 ? 'down' : '';
   const avg = played.length ? Math.round(played.reduce((a,b)=>a+b,0) / played.length) : null;
-  const arrow = avg == null || !fp ? '' : avg >= fp * 1.15 ? ' <b style="color:var(--ok)">▲</b>' : avg <= fp * 0.85 ? ' <b style="color:var(--bad)">▼</b>' : ' <span class="muted">=</span>';
-  return `<div class="form"><span class="small muted" style="margin-right:2px">${avg == null ? 'no ha jugado' : 'ahora ' + avg}${arrow}</span><span style="display:inline-flex;gap:4px">${g.map(x => `<span class="fc ${cls(x.fp)}" title="${new Date(x.d+'T12:00').toLocaleDateString('es-ES',{day:'numeric',month:'short'})}">${x.fp == null ? '–' : x.fp}</span>`).join('')}</span></div>`; }
+  const arrow = avg == null || !fp ? '' : avg >= fp * 1.15 ? ' · <b style="color:var(--ok)">por encima</b>' : avg <= fp * 0.85 ? ' · <b style="color:var(--bad)">por debajo</b>' : ' · en su línea';
+  return `<div class="form"><span class="small muted" style="margin-right:2px;white-space:nowrap" title="Comparado con su FPPG">${avg == null ? 'no ha jugado' : 'ahora ' + avg}${arrow}</span><span style="display:inline-flex;gap:4px">${g.map(x => `<span class="fc ${cls(x.fp)}" title="${new Date(x.d+'T12:00').toLocaleDateString('es-ES',{day:'numeric',month:'short'})}">${x.fp == null ? '–' : x.fp}</span>`).join('')}</span></div>`; }
 function adaptLineup(src, ids){
   const st = src.starters.map(Number), bn = src.bench_order.map(Number); let c = src.captain_id, vc = src.vice_captain_id;
   const free = ids.filter(id => !st.includes(id) && !bn.includes(id));
@@ -1223,7 +1223,7 @@ function viewRules(){
       ${row('Impacto: +/− del partido × (minutos ÷ 36)','máx. ±8')}
     </ul></div>
     <p class="small muted"><b style="color:var(--text)">FPPG</b> (fantasy points per game): media de puntos fantasy por partido de la temporada pasada, calculada con esta tabla. Si un jugador jugó pocos partidos se mezcla con la temporada anterior. Los rookies no tienen FPPG.</p>
-    <p class="small muted"><b style="color:var(--text)">Forma reciente</b>: en el mercado, los puntos fantasy de los últimos 5 partidos de su equipo. Verde si supera su FPPG en un 15 % o más, rojo si queda un 15 % o más por debajo, y «–» si su equipo jugó y él no. <b style="color:var(--text)">Cruz roja</b>: baja oficial; <b style="color:#f2a33a">cruz naranja</b>: duda (día a día). Fuente: parte de lesiones de ESPN, se actualiza cada hora.</p>
+    <p class="small muted"><b style="color:var(--text)">Forma reciente</b>: en el mercado y en Plantilla, los puntos fantasy de los últimos 5 partidos de su equipo (el más reciente a la derecha). Verde si supera su FPPG en un 15 % o más, rojo si queda un 15 % o más por debajo, y «–» si su equipo jugó y él no. Delante, su media de esos partidos y si está por encima, en su línea o por debajo de su FPPG. <b style="color:var(--text)">Cruz roja</b>: baja oficial; <b style="color:#f2a33a">cruz naranja</b>: duda (día a día). Fuente: parte de lesiones de ESPN, se actualiza cada hora.</p>
     <h2>Tu equipo</h2>
     <div class="card small">
       <p><b>Plantilla de 10</b>, con al menos un rookie. Cada jugador solo puede estar en un equipo de la liga.</p>
