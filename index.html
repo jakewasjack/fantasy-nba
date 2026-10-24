@@ -1110,7 +1110,7 @@ async function loadNotis(){
   S.notiSeen = since; S.unread = S.notis.filter(x => new Date(x.created_at) > since).length;
   const b = $('#bellN'); if(b){ b.textContent = S.unread > 9 ? '9+' : S.unread; b.classList.toggle('hidden', !S.unread); }
 }
-const NICON = { trade:'🔁', trade_ok:'✅', trade_no:'❌', impugno:'⚖️', comi:'📣', org:'🏀', offer:'🤝', deal:'✅', room:'⚔️', frozen:'🧊', pedradas:'🔮', lineup:'📋' };
+const NICON = { points:'📊', trade:'🔁', trade_ok:'✅', trade_no:'❌', impugno:'⚖️', comi:'📣', org:'🏀', offer:'🤝', deal:'✅', room:'⚔️', frozen:'🧊', pedradas:'🔮', lineup:'📋' };
 async function viewNotis(){
   $('#tab').innerHTML = '<p class="muted" style="margin-top:14px">Cargando…</p>';
   await loadNotis(); if(S.view !== 'notis') return;
