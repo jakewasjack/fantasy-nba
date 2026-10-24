@@ -742,7 +742,7 @@ async function renderMarket(){
   if(S.league.draft_status !== 'cerrado'){ $('#tab').innerHTML = '<div class="clock wait">El mercado se abre al terminar el draft.</div>'; return; }
   const M = mkState(); ['q','team','pos'].forEach(k => M[k] = M[k] || ''); if(!M.sort) M.sort = 'media'; if(M.affordable === undefined) M.affordable = true;
   if(!S.td){ $('#tab').innerHTML = '<p class="muted">Cargando…</p>'; if(!await loadTD()) return; }
-  await loadIntel();
+  await Promise.all([loadIntel(), loadRumors()]);
   if(S.tab !== 'mercado') return;
   if(S.room) return drawRoom();
   if(S.trade) return drawTrade();
@@ -791,6 +791,7 @@ function drawMarket(){
         <button class="sm" ${ok?'':'disabled'} onclick="mkConfirm(${id},${M.inn})">${M.armed===id?'Confirmar':'Sale'}</button></li>`}).join('')}</ul>
       <button class="ghost" style="width:100%" onclick="mkReset()">Cancelar</button>` : `
     ${M.out ? `<div class="clock">Buscas sustituto para ${pname(M.out)} · recuperas ${T.paid[M.out]}M · puedes pagar hasta ${maxPrice}M <a href="#" onclick="mkReset();return false" style="color:inherit;margin-left:6px">Cancelar</a></div>` : ''}
+    ${(S.rum || []).length ? `<h2>Rumores de mercado</h2><ul class="list card" style="padding:0 14px">${rumorsHTML()}</ul>` : ''}
     ${tradesMine()}
     <div class="seg" role="tablist" style="margin-top:18px"><button class="${M.mode!=='rivales'?'on':''}" onclick="mkState().mode='libres';drawMarket()">Agentes libres</button><button class="${M.mode==='rivales'?'on':''}" onclick="mkState().mode='rivales';drawMarket()">Otras plantillas</button></div>
     ${M.mode === 'rivales' ? rivalsHTML() : `
@@ -958,6 +959,12 @@ async function useVoucher(pid){
   if(error) return fail(error);
   S.td = null; S.lu = null; await loadTD(); toast('Preferencia usada: el jugador es tuyo'); drawRoom(); }
 
+// ---------- Rumores de mercado (a ciegas: solo el equipo, nunca el jugador) ----------
+async function loadRumors(){
+  try { const { data } = await sb.from('market_rumors').select('*').eq('league_id', S.league.id).gte('created_at', new Date(Date.now() - 48*3600e3).toISOString()).order('created_at', { ascending:false }).limit(5); S.rum = data || []; } catch(e){ S.rum = []; }
+}
+function rumorsHTML(){ const ago = d => { const m = Math.round((Date.now() - new Date(d)) / 60000); return m < 60 ? `hace ${Math.max(m,1)} min` : m < 1440 ? `hace ${Math.round(m/60)} h` : 'ayer'; };
+  return (S.rum || []).map(r => `<li><span style="font-size:18px">${r.kind === 'inminente' ? '🚨' : '🗞️'}</span><div class="grow"><div style="font-style:italic;white-space:normal">${esc(r.body)}</div><div class="small muted">Rumor de mercado · ${ago(r.created_at)}</div></div></li>`).join(''); }
 // ---------- Traspasos entre equipos (1 por 1, hasta 3M para equilibrar) ----------
 const TR_ST = { open:'Esperando respuesta', accepted:'Acordado', rejected:'Rechazada', countered:'Contraofertada', cancelled:'Retirada', expired:'Caducada', executed:'Hecho' };
 function tradeTerms(x){ const tm = u => esc(member(u).team);
@@ -1650,7 +1657,7 @@ function jornadaCard(){
   const closed = S.ws.some(x => x.detail?.closed), me = S.user.id;
   const rows = S.ws.slice().sort((a,b) => (a.rank ?? 99) - (b.rank ?? 99));
   const pend = rows.find(x => x.user_id === me)?.detail?.pending_hustle;
-  return `<div class="between" style="margin:18px 0 8px"><h2 style="margin:0">Game Time! · Jornada ${S.wsWeek}</h2><span class="pill ${closed?'ok':'accent'}" style="white-space:nowrap">${closed ? 'Final' : (() => { const w = (S.sw || []).find(x => x.week_no === S.wsWeek); return w ? 'En juego · termina el ' + new Date(w.ends_on + 'T12:00').toLocaleDateString('es-ES', { weekday:'short', day:'numeric' }) : 'En juego'; })()}</span></div>
+  return `<div class="between" style="margin:18px 0 8px"><h2 style="margin:0">Game Time! · Jornada ${S.wsWeek}</h2><span class="pill ${closed?'ok':'accent'}" style="white-space:nowrap">${closed ? 'Final' : 'En juego'}</span></div>
     ${rows.map(x => { const mine = x.user_id === me; return `<details class="card rival" ${mine ? 'style="border-color:var(--accent)"' : ''}>
       <summary class="rsum">${x.rank ? `<span class="pill">${x.rank}º</span>` : ''}${avatar(x.user_id, 26)}<span class="rname"><span class="name">${esc(x.team_name)}${mine ? ' <span class="small muted">· tú</span>' : ''}</span>
         ${x.rank && x.league_pts != null ? `<br><span class="small muted"><b style="color:var(--accent)">+${x.league_pts}</b> ${x.league_pts===1?'punto':'puntos'} de liga</span>` : ''}</span>
@@ -1680,7 +1687,7 @@ async function renderHome(){
     sb.from('nba_transactions').select('*').order('happened_at', { ascending:false }).range(0, 79),
     sb.from('predictions').select('award').eq('league_id', lid).eq('user_id', me),
     sb.from('league_posts').select('*').eq('league_id', lid).order('created_at', { ascending:false }).range(0, 49),
-    loadRx(), loadImp(), loadIntel(), (S.weekView = null, loadScores())
+    loadRx(), loadImp(), loadIntel(), loadRumors(), (S.weekView = null, loadScores())
   ]);
   const posts = wl.data || [];
   const draftMsg = $('#wmsg')?.value || '', wallTop = document.querySelector('.wall')?.scrollTop || 0;
@@ -1716,11 +1723,12 @@ async function renderHome(){
     </div>
     <h2>Mercado</h2>
     <div class="card" style="padding:4px 14px"><ul class="list">
+      ${rumorsHTML()}
       ${Object.entries(rooms).map(([pid, ts]) => `<li><div class="grow"><div class="name" style="white-space:normal">${ts.map(t=>esc(member(t.user_id).team)).join(' y ')} negocian por ${pname(+pid)}</div><div class="small muted">Mesa abierta${ts.some(t=>t.user_id===me)?' · estás dentro':''}</div></div><button class="sm ${ts.some(t=>t.user_id===me)?'':'ghost'}" onclick="openRoom(${pid})">Ver</button></li>`).join('')}
       ${deals.map(t => `<li><div class="grow"><div class="name" style="white-space:normal">Acuerdo: ${esc(member(t.user_id).team)} se queda a ${pname(t.player_in)}</div><div class="small muted">Se confirma al cierre de la jornada</div></div><button class="sm ghost" onclick="openRoom(${t.player_in})">Ver</button></li>`).join('')}
       ${tForMe.map(x => `<li><div class="grow"><div class="name" style="white-space:normal">🔁 ${esc(member(x.from_user).team)} te ofrece un traspaso</div><div class="small muted">${tradeTerms(x)}</div></div><button class="sm" onclick="openTrade('${x.thread}')">Ver</button></li>`).join('')}
       ${mineP ? `<li><div class="grow"><div class="name" style="white-space:normal">Tienes ${mineP} ${mineP===1?'fichaje pendiente':'fichajes pendientes'}</div><div class="small muted">Nadie más lo sabe</div></div><button class="sm ghost" onclick="S.tab='mercado';render()">Ver</button></li>` : ''}
-      ${!Object.keys(rooms).length && !deals.length && !mineP && !tForMe.length ? '<li class="muted">Sin movimientos todavía. El primero que fiche abre la veda.</li>' : ''}
+      ${!Object.keys(rooms).length && !deals.length && !mineP && !tForMe.length && !(S.rum || []).length ? '<li class="muted">Sin movimientos todavía. El primero que fiche abre la veda.</li>' : ''}
     </ul></div>
     <h2>Clasificación</h2>
     ${tableCard()}
