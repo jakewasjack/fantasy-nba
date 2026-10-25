@@ -1599,7 +1599,7 @@ function slotRow(sl, closed){
   const of = tot && !closed ? ` de ${tot}` : '';
   let sub;
   if(g) sub = `${g}${of} ${(tot||g)===1?'partido':'partidos'} · media ${fmtP(sl.avg)}`;
-  else if(!closed && tot) sub = `aún no ha jugado · ${tot} ${tot===1?'partido':'partidos'} esta semana${sl.by ? ` · de momento entra <b style="color:var(--text)">${name(sl.by)}</b>` : ''}`;
+  else if(!closed && tot) sub = `sin partidos confirmados · ${tot} ${tot===1?'partido':'partidos'} esta semana${sl.by ? ` · de momento entra <b style="color:var(--text)">${name(sl.by)}</b>` : ''}`;
   else sub = sl.by ? `no jugó · entra <b style="color:var(--text)">${name(sl.by)}</b>` : 'no jugó · sin suplente válido';
   const src = !g && sl.by ? sl.by : sl.player;
   return `<li class="bdrow" style="padding:6px 0" onclick="bdToggle(this)" data-p="${src}" data-k="slot" data-m="${sl.mult||1}" data-b="${sl.bonus||0}" data-pts="${sl.points||0}" data-sub="${!g && sl.by ? sl.player : ''}">${posBadge(posOf(sl.player),1)}<div class="grow"><div class="name" style="font-size:14px">${name(sl.player)}${injIcon(sl.player)}${sl.slot==='sexto'?' <span class="pill">6º</span>':''}${sl.mult===2?' <span class="pill accent">×2</span>':''}</div>
@@ -1609,7 +1609,7 @@ function slotRow(sl, closed){
 function benchRow(b, closed){
   const tot = gamesInfo(b.player), g = b.games || 0, of = tot && !closed ? ` de ${tot}` : '';
   return `<li class="bdrow" style="padding:6px 0;opacity:.8" onclick="bdToggle(this)" data-p="${b.player}" data-k="bench" data-m="1" data-b="0" data-pts="${b.points||0}" data-sub="">${posBadge(posOf(b.player),1)}<div class="grow"><div class="name" style="font-size:14px">${pname(b.player)}${injIcon(b.player)} <span class="pill">banquillo</span></div>
-    <div class="small muted">${g ? `${g}${of} ${(tot||g)===1?'partido':'partidos'} · media ${fmtP(b.avg)} · suma el 20%` : (!closed && tot ? `aún no ha jugado · ${tot} ${tot===1?'partido':'partidos'} esta semana` : 'no jugó')}</div></div><span class="price">${fmtP(b.points)}</span></li>`;
+    <div class="small muted">${g ? `${g}${of} ${(tot||g)===1?'partido':'partidos'} · media ${fmtP(b.avg)} · suma el 20%` : (!closed && tot ? `sin partidos confirmados · ${tot} ${tot===1?'partido':'partidos'} esta semana` : 'no jugó')}</div></div><span class="price">${fmtP(b.points)}</span></li>`;
 }
 // Desglose de la media de un jugador en la jornada (se abre al tocar su fila)
 S.bd = {};
@@ -1626,7 +1626,7 @@ function bdHTML(allGames, ds, live){
   const f = n => (n > 0 ? '+' : n < 0 ? '−' : '') + fmtP(Math.abs(n));
   const dia = d => new Date(d + 'T12:00').toLocaleDateString('es-ES', { weekday:'short', day:'numeric' });
   const sub = ds.sub ? `<p class="small" style="margin:0 0 6px">${pname(+ds.sub)} no ha jugado esta semana: puntúa en su lugar <b>${pname(+ds.p)}</b>.</p>` : '';
-  const pendHTML = pend.length ? `<p class="small" style="margin:8px 0 0;color:#7fd3ff">En directo, aún no cuenta: ${pend.map(g => `${dia(g.d)} ${fmtP(g.fp)}`).join(' · ')}. Se confirma por la mañana.</p>` : '';
+  const pendHTML = pend.length ? `<p class="small muted" style="margin:8px 0 0">Pendiente de confirmar: ${pend.map(g => `${dia(g.d)} ${g.opp.startsWith('@') ? 'en ' + g.opp.slice(1) : 'vs ' + g.opp}`).join(' · ')}. Sus puntos se suman por la mañana, cuando se carga el esfuerzo.</p>` : '';
   if(!games.length) return sub + '<p class="small muted" style="margin:0">Todavía no tiene partidos confirmados esta semana.</p>' + pendHTML;
   const rows = games.map(gm => { const parts = (gm.parts || []).filter(p => Math.abs(+p[1]) >= 0.05);
     const L = gm.line || {};
@@ -1647,8 +1647,7 @@ S.gtMode = {};
 const liveDiff = x => { const l = (S.wsLive || {})[x.user_id]; return l && l.total != null && x.total != null ? +l.total - +x.total : 0; };
 function gtBody(uid){
   const x = S.ws.find(r => r.user_id === uid), l = (S.wsLive || {})[uid], dif = liveDiff(x), live = S.gtMode[uid] === 'live' && l;
-  return `${Math.abs(dif) >= 0.05 ? `<div class="seg" style="margin-top:8px"><button class="${live?'':'on'}" onclick="gtSwitch('${uid}','of')">Confirmados · ${fmtP(x.total)}</button><button class="${live?'on':''}" onclick="gtSwitch('${uid}','live')">En directo · ${fmtP(l.total)}</button></div>` : ''}
-    ${lineupList(live ? l : x, live)}`;
+  return lineupList(x, false);
 }
 function gtSwitch(uid, m){ S.gtMode[uid] = m; const el = document.querySelector(`.gtbody[data-u="${uid}"]`); if(el) el.innerHTML = gtBody(uid); }
 const fmtP = n => n == null ? '–' : Number(n).toLocaleString('es-ES', { minimumFractionDigits:1, maximumFractionDigits:1 });
@@ -1661,9 +1660,9 @@ function jornadaCard(){
     ${rows.map(x => { const mine = x.user_id === me; return `<details class="card rival" ${mine ? 'style="border-color:var(--accent)"' : ''}>
       <summary class="rsum">${x.rank ? `<span class="pill">${x.rank}º</span>` : ''}${avatar(x.user_id, 26)}<span class="rname"><span class="name">${esc(x.team_name)}${mine ? ' <span class="small muted">· tú</span>' : ''}</span>
         ${x.rank && x.league_pts != null ? `<br><span class="small muted"><b style="color:var(--accent)">+${x.league_pts}</b> ${x.league_pts===1?'punto':'puntos'} de liga</span>` : ''}</span>
-        <span style="text-align:right"><span class="price">${x.total==null ? 'oculto' : fmtP(x.total)}</span>${Math.abs(liveDiff(x)) >= 0.05 ? `<br><span class="livechip">directo ${liveDiff(x) > 0 ? '+' : '−'}${fmtP(Math.abs(liveDiff(x)))}</span>` : ''}</span><span class="small muted chev">▾</span></summary>
+        <span style="text-align:right"><span class="price">${x.total==null ? 'oculto' : fmtP(x.total)}</span></span><span class="small muted chev">▾</span></summary>
       ${x.total==null ? '<p class="small muted">Se ve al cerrar la jornada.</p>' : `<div class="gtbody" data-u="${x.user_id}">${gtBody(x.user_id)}</div>`}</details>`; }).join('')}
-    ${!closed ? `<p class="small muted" style="margin:4px 2px 0">La cifra grande son los <b style="color:var(--text)">puntos confirmados</b>${S.confUntil ? ' hasta el ' + new Date(S.confUntil + 'T12:00').toLocaleDateString('es-ES', { weekday:'long', day:'numeric' }) : ''}: se actualizan una vez al día, cuando se carga el esfuerzo de la noche anterior. «Directo» son partidos que aún no cuentan; se confirman por la mañana. Toca un jugador para ver de dónde sale su media.</p>` : ''}`;
+    ${!closed ? `<p class="small muted" style="margin:4px 2px 0">Puntos <b style="color:var(--text)">confirmados</b>${S.confUntil ? ' hasta el ' + new Date(S.confUntil + 'T12:00').toLocaleDateString('es-ES', { weekday:'long', day:'numeric' }) : ''}. Se actualizan una vez al día, por la mañana, cuando se carga el esfuerzo de los partidos de la noche anterior. Toca un jugador para ver de dónde sale su media.</p>` : ''}`;
 }
 function tableCard(){
   const rows = S.lt || [];
