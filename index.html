@@ -984,7 +984,7 @@ async function loadRumors(){
 function rumorsHTML(){ const ago = d => { const m = Math.round((Date.now() - new Date(d)) / 60000); return m < 60 ? `hace ${Math.max(m,1)} min` : m < 1440 ? `hace ${Math.round(m/60)} h` : 'ayer'; };
   return (S.rum || []).map(r => `<li><span style="font-size:18px">${r.kind === 'inminente' ? '🚨' : '🗞️'}</span><div class="grow"><div style="font-style:italic;white-space:normal">${esc(r.body)}</div><div class="small muted">Rumor de mercado · ${ago(r.created_at)}</div></div></li>`).join(''); }
 // ---------- Challenge: monedero de insignias y catálogo ----------
-const INS = { money:['💰','Millones'], captain2:['⚡','Segundo capitán'], bench50:['🛡️','Banquillo al 50 %'], preference:['🎟️','Preferencia'], mention:['🏅','Mención'] };
+const INS = { money:['💰','Millones'], captain2:['⚡','Segundo capitán'], rookie2:['🌟','Rookie ×2'], bench50:['🛡️','Banquillo al 50 %'], preference:['🎟️','Preferencia'], mention:['🏅','Mención'] };
 async function walletCard(){
   const { data } = await sb.from('insignias').select('*').eq('league_id', S.league.id).order('created_at', { ascending:false });
   const all = data || [], mine = all.filter(x => x.user_id === S.user.id);
@@ -1000,11 +1000,11 @@ async function walletCard(){
 function challengesCard(){
   const rows = [
     ['🏀','Quinteto Drafteados','Cada lunes','+1M por cada jugador del quinteto que tuvieras alineado','Activo'],
-    ['🆕','Rookie del mes','Fin de mes','🛡️ Banquillo al 50 % una jornada','Noviembre'],
+    ['🆕','Rookie del mes','Fin de mes','🌟 Uno de tus rookies puntúa ×2 una jornada','Noviembre'],
     ['📈','Mánager del mes','Fin de mes','🏅 Mención','Noviembre'],
     ['🤕','Pupas del mes','Fin de mes','🏅 Mención + 1M para remontar','Noviembre'],
     ['🏆','Copa NBA','Bracket antes de cuartos','⚡ Segundo capitán + hasta 2M','Diciembre'],
-    ['⭐','All-Star Weekend','Febrero','Hasta 3M','Febrero'],
+    ['⭐','All-Star Weekend','Febrero','🛡️ Banquillo al 50 % una jornada + hasta 3M','Febrero'],
     ['🔮','Pedradas de temporada','Junio','Ventaja para el draft de la temporada siguiente','Junio'],
     ['🕹️','3 \'N BRICK','Rey del mes','🏅 Mención','Activo']];
   return `<h2>Challenges</h2><div class="card" style="padding:4px 14px"><ul class="list">${rows.map(r => `<li><span style="font-size:20px">${r[0]}</span><div class="grow"><div class="name">${r[1]}</div><div class="small muted">${r[2]} · ${r[3]}</div></div><span class="pill ${r[4]==='Activo'?'ok':''}">${r[4]}</span></li>`).join('')}</ul>
@@ -1539,7 +1539,7 @@ function viewRules(){
     <h2>Clasificación</h2>
     <div class="card small"><p>Estilo Fórmula 1: cada jornada reparte puntos de liga según el puesto. Con 3 equipos: <b>3 · 1 · 0</b>. Con 10: <b>25 · 18 · 15 · 12 · 10 · 8 · 6 · 4 · 2 · 1</b>. Si dos equipos empatan en una jornada, ambos se llevan los puntos del puesto más alto.</p>
       <p><b>La liga se decide solo por jornadas.</b> Todo lo demás está en <b>Challenge</b> y no suma puntos de liga: da <b>insignias</b> que se gastan durante la temporada regular.</p>
-      <p><b>Quinteto Drafteados</b> (cada lunes): +1M de saldo por cada jugador del quinteto que tuvieras alineado. <b>Rookie del mes</b>: 🛡️ banquillo al 50 % una jornada. <b>Mánager del mes</b>: 🏅 mención. <b>Pupas del mes</b>: 🏅 mención y +1M. <b>Copa NBA</b>: ⚡ segundo capitán y millones. <b>All-Star</b>: millones. <b>Pedradas</b>: ventaja para el draft de la temporada siguiente.</p></div>
+      <p><b>Quinteto Drafteados</b> (cada lunes): +1M de saldo por cada jugador del quinteto que tuvieras alineado. <b>Rookie del mes</b>: 🌟 uno de tus rookies puntúa ×2 una jornada. <b>Mánager del mes</b>: 🏅 mención. <b>Pupas del mes</b>: 🏅 mención y +1M. <b>Copa NBA</b>: ⚡ segundo capitán y millones. <b>All-Star</b>: 🛡️ banquillo al 50 % una jornada y millones. <b>Pedradas</b>: ventaja para el draft de la temporada siguiente.</p></div>
     <h2>Mercado</h2>
     <div class="card small">
       <p><b>Agentes libres.</b> Cada fichaje es un cambio uno por uno: sueltas a uno de los tuyos y recuperas lo que pagaste. Precios fijos toda la temporada, sin límite de cambios, y el saldo no puede quedar negativo.</p>
