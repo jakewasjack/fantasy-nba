@@ -96,6 +96,7 @@ table.box th{position:sticky;left:0;z-index:1;background:var(--surface);text-ali
 table.box tr.bxh th,table.box tr.bxh td{background:var(--surface2);color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.03em}
 table.box tr.bx{cursor:pointer} table.box tr.bx.open th,table.box tr.bx.open td{border-bottom:0}
 table.box td.bxa{font-weight:700;color:var(--text)}
+table.box tr.bxh td.neg{color:#e98c86} table.box tr.bxh td.hus{color:#7fd3ff}
 .bxn{display:flex;align-items:center;gap:4px;overflow:hidden} .bxn>span:nth-child(2){overflow:hidden;text-overflow:ellipsis}
 .bxnote{white-space:normal;font-weight:400;font-size:11px}
 tr.bdtr td{position:sticky;left:0;text-align:left;white-space:normal;padding:0 8px 10px;background:var(--surface)}
@@ -995,7 +996,7 @@ async function viewJornada(){
   if(error) return fail(error);
   const rows = (ws || []).slice().sort((a,b) => (a.rank ?? 99) - (b.rank ?? 99));
   const ids = [...new Set(rows.flatMap(x => { const d = x.detail || {}; return [...(d.slots||[]).flatMap(s => [s.player, s.by].filter(Boolean)), ...(d.bench_slots||[]).map(b => b.player)]; }))];
-  const st = {}; if(ids.length){ const { data } = await sb.rpc('week_player_stats', { p_week:wk, p_players:ids }); (data || []).forEach(r => st[r.player_id] = r); }
+  const st = {}; if(ids.length){ const { data } = await sb.rpc('week_player_stats_full', { p_week:wk, p_players:ids }); (data || []).forEach(r => st[r.player_id] = r); }
   if(S.view !== 'jornada') return;
   S.jdata = { wk, rows, st, closed: rows.some(x => x.detail?.closed) };
   S.wsWeek = wk;   // el desglose por jugador usa esta jornada
@@ -1009,7 +1010,7 @@ async function viewJornada(){
       <span style="display:flex;gap:8px;align-items:center">${opts.length > 1 ? `<select id="jwsel" style="width:auto;margin:0">${opts.map(w => `<option value="${w.week_no}" ${w.week_no===wk?'selected':''}>J${w.week_no}</option>`).join('')}</select>` : ''}<span class="pill ${S.jdata.closed?'ok':'accent'}">${S.jdata.closed ? 'Final' : 'En juego'}</span></span></div>
     <div class="seg" style="margin:12px 0"><button class="${S.jmode!=='h2h'?'on':''}" onclick="S.jmode='box';viewJornadaDraw()">📊 Box score</button><button class="${S.jmode==='h2h'?'on':''}" onclick="S.jmode='h2h';viewJornadaDraw()">⚔️ Cara a cara</button></div>
     <div id="jbody"></div>
-    <p class="small muted" style="margin-top:10px">Medias de la semana con los partidos confirmados. Toca un jugador para ver su desglose partido a partido.</p>`;
+    <p class="small muted" style="margin-top:10px">Medias por partido de la semana, solo con partidos confirmados. En rojo, lo que resta (pérdidas, tiros y libres fallados, faltas); en azul, el esfuerzo (desvíos, balones sueltos, faltas en ataque provocadas y tiros defendidos). Impacto = +/− ajustado a los minutos, entre −8 y +8. Toca un jugador para ver su desglose partido a partido.</p>`;
   const sel = $('#jwsel'); if(sel) sel.onchange = e => { S.jw = +e.target.value; viewJornada(); };
   viewJornadaDraw();
 }
@@ -1026,9 +1027,12 @@ function boxRow(pid, role, s, extra){
   const ds = `data-p="${extra.src || pid}" data-k="${extra.kind || 'slot'}" data-m="${extra.m || 1}" data-b="${extra.b || 0}" data-pts="${extra.pts || 0}" data-sub="${extra.sub || ''}"`;
   return `<tr class="bx" onclick="bdToggleTr(this)" ${ds}><th><div class="bxn">${posBadge(posOf(pid),1)} <span>${pname(pid)}</span>${injIcon(pid)}${role ? ` <span class="pill ${role==='×2'?'accent':''}" style="padding:0 6px;font-size:11px">${role}</span>` : ''}</div>${extra.note ? `<div class="small muted bxnote">${extra.note}</div>` : ''}</th>
     <td>${st.games || 0}</td><td>${played ? n1(st.fp) : '–'}</td><td class="bxa">${extra.aporta == null ? '–' : n1(extra.aporta)}</td>
-    <td>${played ? Math.round(st.min) : '–'}</td><td>${n1(played ? st.pts : null)}</td><td>${n1(played ? st.reb : null)}</td><td>${n1(played ? st.ast : null)}</td><td>${n1(played ? st.stl : null)}</td><td>${n1(played ? st.blk : null)}</td><td>${n1(played ? st.tov : null)}</td></tr>`;
+    <td>${played ? Math.round(st.min) : '–'}</td>${BOXC.map(c => `<td class="${c[2]||''}">${n1(played ? st[c[0]] : null)}</td>`).join('')}</tr>`;
 }
-function boxHead(t){ return `<tr class="bxh"><th>${t}</th><td>PJ</td><td>MEDIA</td><td>APORTA</td><td>MIN</td><td>PTS</td><td>REB</td><td>AST</td><td>ROB</td><td>TAP</td><td>PÉRD</td></tr>`; }
+// Columnas por partido (media de la semana): [campo, cabecera, clase]
+const BOXC = [['pts','PTS'],['reb','REB'],['ast','AST'],['stl','ROB'],['blk','TAP'],['tov','PÉRD','neg'],['fgx','TC FALL','neg'],['ftx','TL FALL','neg'],['pf','FALTAS','neg'],
+  ['dfl','DESVÍOS','hus'],['lb','B. SUELTOS','hus'],['chg','F. ATAQUE','hus'],['cs','T. DEFEND','hus'],['imp','IMPACTO']];
+function boxHead(t){ return `<tr class="bxh"><th>${t}</th><td>PJ</td><td>MEDIA</td><td>APORTA</td><td>MIN</td>${BOXC.map(c => `<td class="${c[2]||''}">${c[1]}</td>`).join('')}</tr>`; }
 function slotBox(s, role){ if(!s) return '';
   const subbed = !s.games && s.by;
   return boxRow(s.player, role, s, { src: subbed ? s.by : s.player, m: s.mult, b: s.bonus, pts: s.points, sub: subbed ? s.player : '', aporta: (s.points || 0) + (s.bonus || 0),
@@ -1039,7 +1043,7 @@ function viewJornadaDraw(){
   const vis = J.rows.filter(x => x.detail);
   if(S.jmode !== 'h2h'){
     const x = J.rows.find(r => r.user_id === S.jteam);
-    const tabs = `<div class="seg" style="margin-bottom:10px;overflow-x:auto">${J.rows.map(r => `<button class="${r.user_id===S.jteam?'on':''}" style="white-space:nowrap" onclick="S.jteam='${r.user_id}';viewJornadaDraw()">${esc(r.team_name)}</button>`).join('')}</div>`;
+    const tabs = `<div class="seg" style="margin-bottom:10px;overflow-x:auto">${J.rows.map(r => `<button class="${r.user_id===S.jteam?'on':''}" style="white-space:nowrap" onclick="S.jteam='${r.user_id}';viewJornadaDraw()">${esc(r.team_name.trim().split(/\s+/)[0])}</button>`).join('')}</div>`;
     if(!x || !x.detail){ el.innerHTML = tabs + '<p class="muted small">Las alineaciones rivales se ven al cerrar la jornada.</p>'; return; }
     const R = jRoles(x);
     el.innerHTML = tabs + `<div class="between" style="margin:0 2px 8px"><span class="name">${avatar(x.user_id, 22)} ${esc(x.team_name)}</span><span><span class="small muted">${x.rank ? x.rank + 'º · ' : ''}</span><b style="font-size:18px">${fmtP(x.total)}</b></span></div>
@@ -1080,7 +1084,7 @@ async function bdToggleTr(tr){
   const nx = tr.nextElementSibling; if(nx && nx.classList.contains('bdtr')){ nx.remove(); tr.classList.remove('open'); return; }
   if(tr.dataset.k === 'used') return toast('Este jugador entra por un titular: su desglose está en la fila de ese titular');
   const pid = +tr.dataset.p, k = S.wsWeek + ':' + pid; tr.classList.add('open');
-  const row = document.createElement('tr'); row.className = 'bdtr'; row.innerHTML = '<td colspan="11"><div class="bdcell"><span class="small muted">Cargando…</span></div></td>'; tr.after(row);
+  const row = document.createElement('tr'); row.className = 'bdtr'; row.innerHTML = '<td colspan="' + (5 + BOXC.length) + '"><div class="bdcell"><span class="small muted">Cargando…</span></div></td>'; tr.after(row);
   if(!S.bd[k]){ const { data, error } = await sb.rpc('player_week_breakdown', { p_week:S.wsWeek, p_player:pid }); if(error){ row.remove(); return fail(error); } S.bd[k] = data || []; }
   row.querySelector('.bdcell').innerHTML = bdHTML(S.bd[k], tr.dataset, false);
 }
