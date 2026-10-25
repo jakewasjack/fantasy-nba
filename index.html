@@ -89,6 +89,23 @@ details.rival .chev{display:inline-block;transition:transform .15s}
 .rx button{background:var(--surface2);color:var(--text);border:1px solid var(--line);border-radius:99px;padding:3px 9px;font-size:13px;font-weight:500;line-height:1.3}
 .rx button.on{border-color:var(--accent);background:rgba(242,140,40,.15)}
 .rx button.add{color:var(--muted)}
+.bxwrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table.box{border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums;min-width:100%}
+table.box th,table.box td{padding:8px 8px;border-bottom:1px solid var(--line);white-space:nowrap;text-align:right}
+table.box th{position:sticky;left:0;z-index:1;background:var(--surface);text-align:left;font-weight:600;min-width:150px;max-width:170px;border-right:1px solid var(--line)}
+table.box tr.bxh th,table.box tr.bxh td{background:var(--surface2);color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.03em}
+table.box tr.bx{cursor:pointer} table.box tr.bx.open th,table.box tr.bx.open td{border-bottom:0}
+table.box td.bxa{font-weight:700;color:var(--text)}
+.bxn{display:flex;align-items:center;gap:4px;overflow:hidden} .bxn>span:nth-child(2){overflow:hidden;text-overflow:ellipsis}
+.bxnote{white-space:normal;font-weight:400;font-size:11px}
+tr.bdtr td{position:sticky;left:0;text-align:left;white-space:normal;padding:0 8px 10px;background:var(--surface)}
+.bdcell{max-width:340px;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+table.h2h{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+table.h2h td{padding:8px 4px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:middle}
+table.h2h tr:last-child td{border-bottom:0}
+table.h2h .h2l{text-align:left;width:40%} table.h2h .h2r{text-align:right;width:40%} table.h2h .h2m{text-align:center;width:20%}
+table.h2h .h2v{font-weight:700;font-size:15px;color:var(--text)} table.h2h .h2t td{padding-bottom:12px}
+table.h2h b.up{color:var(--ok)} table.h2h b.down{color:var(--bad)}
 .livechip{display:inline-block;margin-top:2px;font-size:11px;font-weight:700;color:#7fd3ff;background:rgba(78,168,255,.12);border:1px dashed rgba(78,168,255,.5);border-radius:99px;padding:1px 7px;white-space:nowrap}
 .bdrow{cursor:pointer}
 .bdrow.open{border-bottom:0}
@@ -965,6 +982,108 @@ async function loadRumors(){
 }
 function rumorsHTML(){ const ago = d => { const m = Math.round((Date.now() - new Date(d)) / 60000); return m < 60 ? `hace ${Math.max(m,1)} min` : m < 1440 ? `hace ${Math.round(m/60)} h` : 'ayer'; };
   return (S.rum || []).map(r => `<li><span style="font-size:18px">${r.kind === 'inminente' ? '🚨' : '🗞️'}</span><div class="grow"><div style="font-style:italic;white-space:normal">${esc(r.body)}</div><div class="small muted">Rumor de mercado · ${ago(r.created_at)}</div></div></li>`).join(''); }
+// ---------- Página Jornada: box score por equipo y cara a cara ----------
+function openJornada(mode, team){ S.jmode = mode || 'box'; if(team) S.jteam = team; S.jw = S.jw || S.liveWeek; S.view = 'jornada'; render(); window.scrollTo(0,0); }
+async function viewJornada(){
+  const lid = S.league.id, me = S.user.id;
+  if(!S.sw) await loadScores();
+  const opts = (S.sw || []).filter(w => new Date(w.locks_at) <= new Date());
+  const wk = S.jw || S.liveWeek || (opts.length ? opts[opts.length-1].week_no : null);
+  $('#tab').innerHTML = '<p style="margin-top:14px"><a href="#" onclick="closeView();return false">← Volver</a></p><p class="muted">Cargando…</p>';
+  if(!wk){ $('#tab').innerHTML = '<p style="margin-top:14px"><a href="#" onclick="closeView();return false">← Volver</a></p><p class="muted">Todavía no ha empezado ninguna jornada.</p>'; return; }
+  const { data:ws, error } = await sb.rpc('week_scores', { p_league:lid, p_week:wk });
+  if(error) return fail(error);
+  const rows = (ws || []).slice().sort((a,b) => (a.rank ?? 99) - (b.rank ?? 99));
+  const ids = [...new Set(rows.flatMap(x => { const d = x.detail || {}; return [...(d.slots||[]).flatMap(s => [s.player, s.by].filter(Boolean)), ...(d.bench_slots||[]).map(b => b.player)]; }))];
+  const st = {}; if(ids.length){ const { data } = await sb.rpc('week_player_stats', { p_week:wk, p_players:ids }); (data || []).forEach(r => st[r.player_id] = r); }
+  if(S.view !== 'jornada') return;
+  S.jdata = { wk, rows, st, closed: rows.some(x => x.detail?.closed) };
+  S.wsWeek = wk;   // el desglose por jugador usa esta jornada
+  if(!S.jteam || !rows.some(x => x.user_id === S.jteam)) S.jteam = rows.some(x => x.user_id === me) ? me : rows[0]?.user_id;
+  const vis = rows.filter(x => x.detail);
+  if(!S.ja || !vis.some(x => x.user_id === S.ja)) S.ja = vis.some(x => x.user_id === me) ? me : vis[0]?.user_id;
+  if(!S.jb || S.jb === S.ja || !vis.some(x => x.user_id === S.jb)) S.jb = vis.find(x => x.user_id !== S.ja)?.user_id;
+  $('#tab').innerHTML = `
+    <p style="margin-top:14px"><a href="#" onclick="closeView();return false">← Volver</a></p>
+    <div class="between"><h1 style="margin:0">Jornada ${wk}</h1>
+      <span style="display:flex;gap:8px;align-items:center">${opts.length > 1 ? `<select id="jwsel" style="width:auto;margin:0">${opts.map(w => `<option value="${w.week_no}" ${w.week_no===wk?'selected':''}>J${w.week_no}</option>`).join('')}</select>` : ''}<span class="pill ${S.jdata.closed?'ok':'accent'}">${S.jdata.closed ? 'Final' : 'En juego'}</span></span></div>
+    <div class="seg" style="margin:12px 0"><button class="${S.jmode!=='h2h'?'on':''}" onclick="S.jmode='box';viewJornadaDraw()">📊 Box score</button><button class="${S.jmode==='h2h'?'on':''}" onclick="S.jmode='h2h';viewJornadaDraw()">⚔️ Cara a cara</button></div>
+    <div id="jbody"></div>
+    <p class="small muted" style="margin-top:10px">Medias de la semana con los partidos confirmados. Toca un jugador para ver su desglose partido a partido.</p>`;
+  const sel = $('#jwsel'); if(sel) sel.onchange = e => { S.jw = +e.target.value; viewJornada(); };
+  viewJornadaDraw();
+}
+function jRoles(x){ const d = x.detail || {}, sl = d.slots || [];
+  const cap = sl.find(s => s.mult === 2) || null;
+  const tit = sl.filter(s => s.slot !== 'sexto' && s !== cap).sort((a,b) => posRank(a.player) - posRank(b.player));
+  const six = sl.find(s => s.slot === 'sexto') || null;
+  const bench = (d.bench_slots || []);
+  return { cap, tit, six, bench, d };
+}
+const n1 = v => v == null ? '–' : Number(v).toLocaleString('es-ES', { maximumFractionDigits:1, minimumFractionDigits:1 });
+function boxRow(pid, role, s, extra){
+  const st = S.jdata.st[pid] || {}, played = !!st.games;
+  const ds = `data-p="${extra.src || pid}" data-k="${extra.kind || 'slot'}" data-m="${extra.m || 1}" data-b="${extra.b || 0}" data-pts="${extra.pts || 0}" data-sub="${extra.sub || ''}"`;
+  return `<tr class="bx" onclick="bdToggleTr(this)" ${ds}><th><div class="bxn">${posBadge(posOf(pid),1)} <span>${pname(pid)}</span>${injIcon(pid)}${role ? ` <span class="pill ${role==='×2'?'accent':''}" style="padding:0 6px;font-size:11px">${role}</span>` : ''}</div>${extra.note ? `<div class="small muted bxnote">${extra.note}</div>` : ''}</th>
+    <td>${st.games || 0}</td><td>${played ? n1(st.fp) : '–'}</td><td class="bxa">${extra.aporta == null ? '–' : n1(extra.aporta)}</td>
+    <td>${played ? Math.round(st.min) : '–'}</td><td>${n1(played ? st.pts : null)}</td><td>${n1(played ? st.reb : null)}</td><td>${n1(played ? st.ast : null)}</td><td>${n1(played ? st.stl : null)}</td><td>${n1(played ? st.blk : null)}</td><td>${n1(played ? st.tov : null)}</td></tr>`;
+}
+function boxHead(t){ return `<tr class="bxh"><th>${t}</th><td>PJ</td><td>MEDIA</td><td>APORTA</td><td>MIN</td><td>PTS</td><td>REB</td><td>AST</td><td>ROB</td><td>TAP</td><td>PÉRD</td></tr>`; }
+function slotBox(s, role){ if(!s) return '';
+  const subbed = !s.games && s.by;
+  return boxRow(s.player, role, s, { src: subbed ? s.by : s.player, m: s.mult, b: s.bonus, pts: s.points, sub: subbed ? s.player : '', aporta: (s.points || 0) + (s.bonus || 0),
+    note: subbed ? `No jugó · entra ${pname(s.by)}` : s.bonus ? '+2 Drafteados' : '' }); }
+function viewJornadaDraw(){
+  const J = S.jdata, me = S.user.id, el = $('#jbody'); if(!el) return;
+  document.querySelectorAll('.seg button').forEach((b,i) => { if(i < 2 && b.closest('#tab') && !b.closest('#jbody')) b.classList.toggle('on', (i === 1) === (S.jmode === 'h2h')); });
+  const vis = J.rows.filter(x => x.detail);
+  if(S.jmode !== 'h2h'){
+    const x = J.rows.find(r => r.user_id === S.jteam);
+    const tabs = `<div class="seg" style="margin-bottom:10px;overflow-x:auto">${J.rows.map(r => `<button class="${r.user_id===S.jteam?'on':''}" style="white-space:nowrap" onclick="S.jteam='${r.user_id}';viewJornadaDraw()">${esc(r.team_name)}</button>`).join('')}</div>`;
+    if(!x || !x.detail){ el.innerHTML = tabs + '<p class="muted small">Las alineaciones rivales se ven al cerrar la jornada.</p>'; return; }
+    const R = jRoles(x);
+    el.innerHTML = tabs + `<div class="between" style="margin:0 2px 8px"><span class="name">${avatar(x.user_id, 22)} ${esc(x.team_name)}</span><span><span class="small muted">${x.rank ? x.rank + 'º · ' : ''}</span><b style="font-size:18px">${fmtP(x.total)}</b></span></div>
+      <div class="bxwrap"><table class="box">
+        ${boxHead('CAPITÁN')}${slotBox(R.cap, '×2')}
+        ${boxHead('TITULARES')}${R.tit.map(s => slotBox(s, '')).join('')}
+        ${R.six ? boxHead('SEXTO HOMBRE') + slotBox(R.six, '6º') : ''}
+        ${R.bench.length ? boxHead('BANQUILLO') + R.bench.map(b => boxRow(b.player, b.used ? '' : '20%', b, { kind: b.used ? 'used' : 'bench', pts: b.points, aporta: b.used ? null : b.points,
+            note: b.used ? `Entra por ${pname((R.d.slots || []).find(s => s.by === b.player)?.player)} · suma arriba` : '' })).join('') : ''}
+      </table></div>`;
+    return;
+  }
+  if(vis.length < 2){ el.innerHTML = '<p class="muted small">Hacen falta al menos dos alineaciones visibles para comparar.</p>'; return; }
+  const sel = (id, v) => `<select id="${id}" style="margin:0">${vis.map(r => `<option value="${r.user_id}" ${r.user_id===v?'selected':''}>${esc(r.team_name)}</option>`).join('')}</select>`;
+  const A = vis.find(r => r.user_id === S.ja), B = vis.find(r => r.user_id === S.jb), RA = jRoles(A), RB = jRoles(B);
+  const ap = s => s ? (s.points || 0) + (s.bonus || 0) : 0;
+  const who = s => s ? `${pname(!s.games && s.by ? s.by : s.player)}` : '—';
+  const line = (label, a, b, an, bn) => { const d = a - b; return `<tr><td class="h2l">${an}<div class="h2v">${n1(a)}</div></td><td class="h2m"><div class="small muted">${label}</div><b class="${d>0.05?'up':d<-0.05?'down':''}">${d>0.05?'+':d<-0.05?'−':''}${n1(Math.abs(d))}</b></td><td class="h2r">${bn}<div class="h2v">${n1(b)}</div></td></tr>`; };
+  const rowsH = [];
+  rowsH.push(line('Capitán ×2', ap(RA.cap), ap(RB.cap), who(RA.cap), who(RB.cap)));
+  for(let i = 0; i < Math.max(RA.tit.length, RB.tit.length); i++){ const a = RA.tit[i], b = RB.tit[i];
+    rowsH.push(line('Titular ' + (i + 1), ap(a), ap(b), a ? posBadge(posOf(a.player),1) + ' ' + who(a) : '—', b ? who(b) + ' ' + posBadge(posOf(b.player),1) : '—')); }
+  rowsH.push(line('Sexto hombre', ap(RA.six), ap(RB.six), who(RA.six), who(RB.six)));
+  const bsum = R => R.bench.filter(b => !b.used).reduce((t,b) => t + (b.points || 0), 0);
+  const nb = R => { const k = R.bench.filter(b => !b.used).length; return k + (k === 1 ? ' jugador' : ' jugadores'); };
+  rowsH.push(line('Banquillo 20%', bsum(RA), bsum(RB), nb(RA), nb(RB)));
+  const dt = (+A.total || 0) - (+B.total || 0);
+  el.innerHTML = `<div class="row" style="margin-bottom:10px">${sel('ja', S.ja)}<span class="small muted" style="flex:0 0 auto;align-self:center">vs</span>${sel('jb', S.jb)}</div>
+    <div class="card" style="padding:10px 12px"><table class="h2h">
+      <tr class="h2t"><td class="h2l">${avatar(A.user_id, 22)}<div class="h2v" style="font-size:20px">${fmtP(A.total)}</div></td><td class="h2m"><div class="small muted">Total</div><b class="${dt>0.05?'up':dt<-0.05?'down':''}">${dt>0.05?'+':dt<-0.05?'−':''}${n1(Math.abs(dt))}</b></td><td class="h2r">${avatar(B.user_id, 22)}<div class="h2v" style="font-size:20px">${fmtP(B.total)}</div></td></tr>
+      ${rowsH.join('')}
+    </table></div>
+    <p class="small muted">Rol contra rol: capitán contra capitán, titulares ordenados por posición (exteriores primero), sexto contra sexto y banquillo. En verde, lo que saca de ventaja ${esc(A.team_name)}.</p>`;
+  $('#ja').onchange = e => { S.ja = e.target.value; if(S.jb === S.ja) S.jb = vis.find(r => r.user_id !== S.ja)?.user_id; viewJornadaDraw(); };
+  $('#jb').onchange = e => { S.jb = e.target.value; if(S.ja === S.jb) S.ja = vis.find(r => r.user_id !== S.jb)?.user_id; viewJornadaDraw(); };
+}
+async function bdToggleTr(tr){
+  const nx = tr.nextElementSibling; if(nx && nx.classList.contains('bdtr')){ nx.remove(); tr.classList.remove('open'); return; }
+  if(tr.dataset.k === 'used') return toast('Este jugador entra por un titular: su desglose está en la fila de ese titular');
+  const pid = +tr.dataset.p, k = S.wsWeek + ':' + pid; tr.classList.add('open');
+  const row = document.createElement('tr'); row.className = 'bdtr'; row.innerHTML = '<td colspan="11"><div class="bdcell"><span class="small muted">Cargando…</span></div></td>'; tr.after(row);
+  if(!S.bd[k]){ const { data, error } = await sb.rpc('player_week_breakdown', { p_week:S.wsWeek, p_player:pid }); if(error){ row.remove(); return fail(error); } S.bd[k] = data || []; }
+  row.querySelector('.bdcell').innerHTML = bdHTML(S.bd[k], tr.dataset, false);
+}
 // ---------- Traspasos entre equipos (1 por 1, hasta 3M para equilibrar) ----------
 const TR_ST = { open:'Esperando respuesta', accepted:'Acordado', rejected:'Rechazada', countered:'Contraofertada', cancelled:'Retirada', expired:'Caducada', executed:'Hecho' };
 function tradeTerms(x){ const tm = u => esc(member(u).team);
@@ -1320,7 +1439,7 @@ async function arcGameOver(){ const g = ARC.g, ov = $('#arcOver'); if(!ov) retur
 }
 
 function renderView(){
-  ({ perfil:viewProfile, reglas:viewRules, comi:viewComm, arcade:viewArcade, notis:viewNotis })[S.view]();
+  ({ perfil:viewProfile, reglas:viewRules, comi:viewComm, arcade:viewArcade, notis:viewNotis, jornada:viewJornada })[S.view]();
 }
 function viewProfile(){
   const me = member(S.user.id), cur = me.avatar || '';
@@ -1657,12 +1776,11 @@ function jornadaCard(){
   const rows = S.ws.slice().sort((a,b) => (a.rank ?? 99) - (b.rank ?? 99));
   const pend = rows.find(x => x.user_id === me)?.detail?.pending_hustle;
   return `<div class="between" style="margin:18px 0 8px"><h2 style="margin:0">Game Time! · Jornada ${S.wsWeek}</h2><span class="pill ${closed?'ok':'accent'}" style="white-space:nowrap">${closed ? 'Final' : 'En juego'}</span></div>
-    ${rows.map(x => { const mine = x.user_id === me; return `<details class="card rival" ${mine ? 'style="border-color:var(--accent)"' : ''}>
-      <summary class="rsum">${x.rank ? `<span class="pill">${x.rank}º</span>` : ''}${avatar(x.user_id, 26)}<span class="rname"><span class="name">${esc(x.team_name)}${mine ? ' <span class="small muted">· tú</span>' : ''}</span>
+    ${rows.map(x => { const mine = x.user_id === me; return `<div class="card rsum" style="cursor:pointer;${mine ? 'border-color:var(--accent)' : ''}" onclick="openJornada('box','${x.user_id}')">${x.rank ? `<span class="pill">${x.rank}º</span>` : ''}${avatar(x.user_id, 26)}<span class="rname"><span class="name">${esc(x.team_name)}${mine ? ' <span class="small muted">· tú</span>' : ''}</span>
         ${x.rank && x.league_pts != null ? `<br><span class="small muted"><b style="color:var(--accent)">+${x.league_pts}</b> ${x.league_pts===1?'punto':'puntos'} de liga</span>` : ''}</span>
-        <span style="text-align:right"><span class="price">${x.total==null ? 'oculto' : fmtP(x.total)}</span></span><span class="small muted chev">▾</span></summary>
-      ${x.total==null ? '<p class="small muted">Se ve al cerrar la jornada.</p>' : `<div class="gtbody" data-u="${x.user_id}">${gtBody(x.user_id)}</div>`}</details>`; }).join('')}
-    ${!closed ? `<p class="small muted" style="margin:4px 2px 0">Puntos <b style="color:var(--text)">confirmados</b>${S.confUntil ? ' hasta el ' + new Date(S.confUntil + 'T12:00').toLocaleDateString('es-ES', { weekday:'long', day:'numeric' }) : ''}. Se actualizan una vez al día, por la mañana, cuando se carga el esfuerzo de los partidos de la noche anterior. Toca un jugador para ver de dónde sale su media.</p>` : ''}`;
+        <span class="price">${x.total==null ? 'oculto' : fmtP(x.total)}</span><span class="small muted">›</span></div>`; }).join('')}
+    ${rows.length > 1 ? `<div class="row" style="margin-top:4px"><button class="sm" onclick="openJornada('box')">📊 Box score</button><button class="sm ghost" onclick="openJornada('h2h')">⚔️ Cara a cara</button></div>` : ''}
+    ${!closed ? `<p class="small muted" style="margin:4px 2px 0">Puntos <b style="color:var(--text)">confirmados</b>${S.confUntil ? ' hasta el ' + new Date(S.confUntil + 'T12:00').toLocaleDateString('es-ES', { weekday:'long', day:'numeric' }) : ''}. Se actualizan una vez al día, por la mañana, cuando se carga el esfuerzo de los partidos de la noche anterior. Toca un equipo para ver su box score.</p>` : ''}`;
 }
 function tableCard(){
   const rows = S.lt || [];
@@ -1819,8 +1937,7 @@ async function renderLiga(){
     await loadScores(); if(S.tab !== 'liga' || S.view) return;
     const opts = (S.sw || []).filter(w => new Date(w.locks_at) <= new Date());
     scores = `<h2>Clasificación</h2>${tableCard()}
-      <h2 class="between">Jornada ${S.wsWeek || ''} ${opts.length > 1 ? `<select id="wsel" style="width:auto;margin:0">${opts.map(w=>`<option value="${w.week_no}" ${w.week_no===S.wsWeek?'selected':''}>Jornada ${w.week_no}</option>`).join('')}</select>` : ''}</h2>
-      ${weekDetail()}`;
+      ${opts.length ? `<div class="card between" style="cursor:pointer" onclick="openJornada('box')"><div><div class="name">📊 Jornadas en detalle</div><div class="small muted">Box score y cara a cara de cada jornada${opts.length > 1 ? ' · ' + opts.length + ' jornadas' : ''}</div></div><span>›</span></div>` : ''}`;
   }
   $('#tab').innerHTML = scores + `
     <h2>Participantes</h2>
