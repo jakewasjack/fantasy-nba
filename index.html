@@ -1918,6 +1918,7 @@ function attachTypeahead(input, pool){
 }
 
 // ---------- Predicciones ----------
+const SHOW_PEDRADAS = false;
 async function renderPred(){
   $('#tab').innerHTML = '<p class="muted">Cargando…</p>';
   const [{ data, error }, , trib, wal] = await Promise.all([sb.from('predictions').select('*').eq('league_id', S.league.id), S.league.draft_status === 'cerrado' ? arcLoad() : null, S.league.draft_status === 'cerrado' ? tribunalCard() : '', S.league.draft_status === 'cerrado' ? walletCard() : '']);
@@ -1926,6 +1927,8 @@ async function renderPred(){
   const closed = closeAt && new Date() >= closeAt;
   const mine = Object.fromEntries(data.filter(d=>d.user_id===S.user.id).map(d=>[d.award,d]));
   const opts = (rookie) => S.players.filter(p=>!rookie||p.rookie).map(p=>`<option value="${esc(p.name)} · ${p.team}">`).join('');
+  // Las pedradas originales quedan ocultas (copia en predictions_backup_2026) hasta lanzar las nuevas
+  if(S.league.draft_status === 'cerrado' && !SHOW_PEDRADAS){ $('#tab').innerHTML = `${wal || ''}${challengesCard()}<h2>Tribunal</h2>${trib || ''}<h2>Arcade</h2>${arcadeCard()}`; return; }
   $('#tab').innerHTML = `
     ${S.league.draft_status === 'cerrado' ? `${wal || ''}${challengesCard()}<h2>Tribunal</h2>${trib || ''}<h2>Arcade</h2>${arcadeCard()}<h2>Pedradas de temporada</h2>` : ''}
     <p class="muted small">${closed ? 'Pedradas cerradas.' : 'Se cierran el ' + (closeAt ? closeAt.toLocaleString('es-ES',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}) : '—') + '. Ya no suman puntos de liga: darán ventaja para el draft de la temporada que viene (se ampliarán con más categorías). Podéis repetir jugador.'}</p>
