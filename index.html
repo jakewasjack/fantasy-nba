@@ -571,7 +571,8 @@ async function loadTD(force){
   const games = {}; (wg.data || []).forEach(x => games[x.team] = x);
   const owner = {}; ro.data.forEach(r => owner[r.player_id] = r.user_id);
   const paid = {}; ro.data.filter(r => r.user_id === me).forEach(r => paid[r.player_id] = r.price_paid_m);
-  const reqs = rq.data || [], live = reqs.filter(t => LIVE.includes(t.status)), mineLive = live.filter(t => t.user_id === me);
+  // Las peticiones tardías (tras el corte de mesas) de otros no se muestran: nadie debe saber que existen
+  const reqs = (rq.data || []).filter(t => !(t.late && t.user_id !== me)), live = reqs.filter(t => LIVE.includes(t.status)), mineLive = live.filter(t => t.user_id === me);
   const outs = new Set(mineLive.map(t => t.player_out)), ins = mineLive.map(t => t.player_in);
   const roster = Object.keys(paid).map(Number);
   const allPaid = {}; ro.data.forEach(r => allPaid[r.player_id] = r.price_paid_m);
@@ -792,7 +793,7 @@ function drawMarket(){
   $('#tab').innerHTML = `
     <div class="card" style="margin-top:12px">
       <div class="between"><div class="name">Mercado · jornada ${T.week.week_no}</div><span class="pill">Saldo ${T.bal}M</span></div>
-      <div class="small muted">Los cambios entran en la jornada ${T.week.week_no} y se confirman al cierre: ${fmtLock(T.week)}. Nadie ve lo que pides, salvo que otro equipo quiera al mismo jugador: entonces se abre la mesa de negociación.</div>
+      <div class="small muted">Los cambios entran en la jornada ${T.week.week_no} y se confirman al cierre: ${fmtLock(T.week)}. Nadie ve lo que pides, salvo que otro equipo quiera al mismo jugador: entonces se abre la mesa de negociación${T.week.week_no >= 3 ? ` (solo hasta 24 h antes del cierre; después, se lo queda quien lo pidió primero)` : ''}.</div>
       <div class="small" style="margin-top:8px"><b>Cada fichaje es un cambio:</b> sueltas a uno de los tuyos y recuperas lo que pagaste por él. Con tu saldo de ${T.bal}M ${M.out ? `y los ${T.paid[M.out]}M de ${pname(M.out)}` : 'y soltando a tu jugador más caro'} puedes fichar a alguien de hasta <b>${Math.max(maxPrice,0)}M</b>.</div>
       ${(()=>{ const have = T.vouchers.filter(v=>v.holder===me&&!v.used_at), owe = T.vouchers.filter(v=>v.debtor===me&&!v.used_at); return have.length||owe.length ? `<div class="small" style="margin-top:8px"><b>Preferencias:</b> ${[...have.map(v=>'tienes una sobre '+esc(member(v.debtor).team)), ...owe.map(v=>'le debes una a '+esc(member(v.holder).team))].join(' · ')}</div>` : ''; })()}
     </div>
@@ -918,7 +919,7 @@ async function drawRoom(keep){
       ${parts.map((t,i)=>`<div class="small" style="margin-top:2px"><b>${esc(member(t.user_id).team)}</b> <span class="muted">suelta a ${pname(t.player_out)}${open && i===0?' · lo pidió primero':''}${t.agreed?' · se lo queda':''}</span></div>`).join('') || '<div class="small muted">Ya no hay peticiones vivas por él.</div>'}
       ${open ? `<div class="small muted" style="margin-top:2px">Cierra ${fmtLock(T.week)}</div>` : ''}
     </div>
-    <p class="small muted">${accepted ? 'Hay acuerdo: el fichaje se confirma al cierre de la jornada.' : open ? 'Sin acuerdo al cierre: jugador congelado, −3M a cada uno y reservado la jornada siguiente para quien lo pidió primero.' : 'La disputa ya no está abierta.'}</p>
+    <p class="small muted">${accepted ? 'Hay acuerdo: el fichaje se confirma al cierre de la jornada.' : open ? (T.week.week_no >= 3 ? 'Sin acuerdo al cierre: jugador congelado, −3M para quien lo pidió en segundo lugar y reservado la jornada siguiente para quien lo pidió primero.' : 'Sin acuerdo al cierre: jugador congelado, −3M a cada uno y reservado la jornada siguiente para quien lo pidió primero.') : 'La disputa ya no está abierta.'}</p>
     <div id="rlist">${items.map(it => it.m
       ? `<div class="card" style="margin:6px 0;padding:10px 12px;${it.m.user_id===me?'border-color:var(--line)':''}"><div class="small muted">${esc(member(it.m.user_id).team)} · ${when(it.t)}</div><div>${esc(it.m.body)}</div></div>`
       : `<div class="card" style="margin:6px 0;padding:10px 12px;border-color:var(--accent)">
@@ -1580,7 +1581,8 @@ function viewRules(){
       <p><b>Agentes libres.</b> Cada fichaje es un cambio uno por uno: sueltas a uno de los tuyos y recuperas lo que pagaste. Precios fijos toda la temporada, sin límite de cambios, y el saldo no puede quedar negativo.</p>
       <p><b>Tus peticiones son secretas.</b> Si otro equipo pide al mismo jugador, se abre una mesa de negociación que toda la liga puede mirar.</p>
       <p><b>En la mesa</b> uno se queda al jugador y el otro se retira, a cambio de nada, de 1 a 3 millones, de una preferencia para la próxima colisión o de la reserva del jugador que se suelta. Tres ofertas por equipo.</p>
-      <p><b>Sin acuerdo al cierre:</b> jugador congelado, 3M de sanción a cada uno y reservado la jornada siguiente para quien lo pidió primero.</p>
+      <p><b>Sin acuerdo al cierre:</b> jugador congelado y reservado la jornada siguiente para quien lo pidió primero. Desde la jornada 3, la sanción de 3M solo la paga quien lo pidió en segundo lugar.</p>
+      <p><b>Corte de mesas</b> (desde la jornada 3): las mesas solo se abren hasta 24 h antes del cierre. Después, si dos equipos piden al mismo agente libre, se lo queda quien lo pidió primero y el otro recupera a su jugador al cierre. Nadie sabe que llegó tarde hasta entonces.</p>
       <p><b>Traspasos entre equipos</b> (Mercado → Otras plantillas): uno por uno. Cada jugador viaja con lo que se pagó por él y se puede equilibrar con hasta 3M. Oferta, contraoferta y chat en una sala privada. Si hay acuerdo, el cambio entra en la próxima jornada: la que está en juego sigue puntuando para su dueño actual. Sin acuerdo, la oferta caduca al cierre, sin sanción. Las ofertas, los rechazos y los traspasos se publican en el muro. Nadie puede quedarse sin rookie ni con saldo negativo.</p>
     </div>`;
 }
@@ -1716,7 +1718,7 @@ function postHTML(p){
   let txt = '';
   if(p.kind === 'room_open') txt = `<b>${(d.users||[]).map(team).join(' y ')}</b> se pelean por <b>${pname(d.player)}</b>. Mesa de negociación abierta.`;
   else if(p.kind === 'deal') txt = `<b>Acuerdo alcanzado:</b> ${team(d.keeper)} se queda a <b>${pname(d.player)}</b>.`;
-  else if(p.kind === 'frozen') txt = `<b>Negociación rota:</b> ${pname(d.player)} queda congelado y cada implicado paga 3M.`;
+  else if(p.kind === 'frozen') txt = `<b>Negociación rota:</b> ${pname(d.player)} queda congelado y ${+d.week >= 3 ? 'paga 3M quien lo pidió en segundo lugar' : 'cada implicado paga 3M'}.`;
   else if(p.kind === 'arcade') txt = `🕹️ <b>${esc(d.initials)}</b> (${team(p.user_id)}) bate el récord del arcade: <b>${Number(d.score).toLocaleString('es-ES')}</b>${d.prev_score ? ` · adiós al ${Number(d.prev_score).toLocaleString('es-ES')} de ${d.prev_initials ? esc(d.prev_initials) : team(d.prev_user)}` : ''}.`;
   else if(p.kind === 'signing') txt = `<b>Fichaje:</b> ${team(d.user)} incorpora a <b>${pname(d.player)}</b> y suelta a ${pname(d.out)}.`;
   else if(p.kind === 'trade_offer') txt = `🔁 <b>${team(d.from)}</b> hace una oferta a <b>${team(d.to)}</b> por <b>${pname(d.player)}</b>.${[d.from,d.to].includes(S.user.id) ? ` <a href="#" onclick="openTrade('${d.thread}');return false">Ver</a>` : ''}`;
