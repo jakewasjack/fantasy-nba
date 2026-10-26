@@ -107,6 +107,10 @@ table.h2h tr:last-child td{border-bottom:0}
 table.h2h .h2l{text-align:left;width:40%} table.h2h .h2r{text-align:right;width:40%} table.h2h .h2m{text-align:center;width:20%}
 table.h2h .h2v{font-weight:700;font-size:15px;color:var(--text)} table.h2h .h2t td{padding-bottom:12px}
 table.h2h b.up{color:var(--ok)} table.h2h b.down{color:var(--bad)}
+.fcard{border-color:var(--accent);background:linear-gradient(160deg,rgba(242,140,40,.16),var(--surface) 60%)}
+.podium{display:flex;justify-content:space-around;align-items:flex-end;text-align:center;gap:6px}
+.podium .pd{flex:1;padding:8px 4px;border-radius:10px} .podium .pd.me{background:rgba(242,140,40,.12)}
+.podium .pd:first-child{order:2} .podium .pd:nth-child(2){order:1} .podium .pd:nth-child(3){order:3}
 .livechip{display:inline-block;margin-top:2px;font-size:11px;font-weight:700;color:#7fd3ff;background:rgba(78,168,255,.12);border:1px dashed rgba(78,168,255,.5);border-radius:99px;padding:1px 7px;white-space:nowrap}
 .bdrow{cursor:pointer}
 .bdrow.open{border-bottom:0}
@@ -1010,6 +1014,37 @@ function challengesCard(){
   return `<h2>Challenges</h2><div class="card" style="padding:4px 14px"><ul class="list">${rows.map(r => `<li><span style="font-size:20px">${r[0]}</span><div class="grow"><div class="name">${r[1]}</div><div class="small muted">${r[2]} · ${r[3]}</div></div><span class="pill ${r[4]==='Activo'?'ok':''}">${r[4]}</span></li>`).join('')}</ul>
     <p class="small muted" style="margin:6px 0 10px">Nada de esto suma puntos de liga: la liga se decide por jornadas. Los challenges dan ventajas para gastar durante la temporada.</p></div>`;
 }
+// ---------- Jornada cerrada: tarjeta en Hoy durante 48 h ----------
+async function loadLastFinal(){
+  S.lastFinal = null;
+  try {
+    const { data:c } = await sb.from('league_week_close').select('week_no,closed_at,mode').eq('league_id', S.league.id).order('week_no', { ascending:false }).limit(1);
+    const cl = c && c[0]; if(!cl || Date.now() - new Date(cl.closed_at) > 48*3600e3) return;
+    const [ws, dw, ins] = await Promise.all([
+      sb.rpc('week_scores', { p_league:S.league.id, p_week:cl.week_no }),
+      sb.from('drafteados_week').select('player_ids').eq('season', SEASON).eq('week_no', cl.week_no).maybeSingle(),
+      sb.from('insignias').select('user_id,amount').eq('league_id', S.league.id).eq('source', 'drafteados:' + cl.week_no)]);
+    S.lastFinal = { week: cl.week_no, rows: (ws.data || []).slice().sort((a,b) => (a.rank ?? 99) - (b.rank ?? 99)), five: cl.mode === 'five' ? (dw.data?.player_ids || []) : [], ins: ins.data || [] };
+  } catch(e){}
+}
+function finalCard(posts){
+  const F = S.lastFinal; if(!F || !F.rows.length) return '';
+  const me = S.user.id, mine = F.rows.find(r => r.user_id === me), top = F.rows[0], last = F.rows[F.rows.length-1];
+  const head = !mine ? `Jornada ${F.week} cerrada` : mine.rank === 1 ? `🏆 ¡Ganaste la jornada ${F.week}!` : mine.user_id === last.user_id ? `Último en la jornada ${F.week}… el lunes que viene, revancha` : `Jornada ${F.week}: ${mine.rank}º, a ${fmtP(+top.total - +mine.total)} del primero`;
+  const medal = ['🥇','🥈','🥉'];
+  const post = (posts || []).find(p => p.kind === 'week_final' && +p.data?.week === F.week);
+  const canImp = post && top.user_id !== me;
+  const impd = post && ((S.imp || {})[post.id] || []).includes(me);
+  return `<div class="card fcard" style="margin-top:12px">
+    <div class="small" style="opacity:.75">Jornada ${F.week} · resultado final</div>
+    <div class="name" style="font-size:19px;margin:2px 0 10px;white-space:normal">${head}</div>
+    <div class="podium">${F.rows.slice(0, 3).map((r, i) => `<div class="pd ${r.user_id===me?'me':''}">${avatar(r.user_id, i === 0 ? 44 : 36)}<div class="small" style="margin-top:4px">${medal[i] || ''} ${esc(r.team_name.trim().split(/\s+/)[0])}</div><div style="font-weight:800">${fmtP(r.total)}</div><div class="small muted">+${r.league_pts ?? 0} de liga</div></div>`).join('')}</div>
+    ${F.five.length ? `<p class="small" style="margin:10px 0 0">🏀 <b>Quinteto Drafteados:</b> ${F.five.map(pname).join(', ')}${F.ins.length ? ` · ${F.ins.filter(x => x.amount).map(x => `<b>${esc(member(x.user_id).team.trim().split(/\s+/)[0])} +${x.amount}M</b>`).join(' · ')}` : ''}</p>` : ''}
+    <div class="row" style="margin-top:10px"><button class="sm" onclick="S.jw=${F.week};openJornada('box')">📊 Ver box score</button>${canImp ? `<button class="sm ${impd?'':'ghost'}" onclick="doImp(${post.id})">${impd ? '⚖️ Impugnado' : '⚖️ Impugnar'}</button>` : ''}</div>
+  </div>`;
+}
+// Al volver a la app, Hoy se refresca sola si lleva un rato sin actualizarse
+document.addEventListener('visibilitychange', () => { if(!document.hidden && S.league && S.tab === 'hoy' && !S.view && Date.now() - (S.homeAt || 0) > 120000) renderHome(); });
 // ---------- Página Jornada: box score por equipo y cara a cara ----------
 function openJornada(mode, team){ S.jmode = mode || 'box'; if(team) S.jteam = team; S.jw = S.jw || S.liveWeek; S.view = 'jornada'; render(); window.scrollTo(0,0); }
 async function viewJornada(){
@@ -1277,7 +1312,7 @@ async function loadNotis(){
   S.notiSeen = since; S.unread = S.notis.filter(x => new Date(x.created_at) > since).length;
   const b = $('#bellN'); if(b){ b.textContent = S.unread > 9 ? '9+' : S.unread; b.classList.toggle('hidden', !S.unread); }
 }
-const NICON = { insignia:'🏅', points:'📊', trade:'🔁', trade_ok:'✅', trade_no:'❌', impugno:'⚖️', comi:'📣', org:'🏀', offer:'🤝', deal:'✅', room:'⚔️', frozen:'🧊', pedradas:'🔮', lineup:'📋' };
+const NICON = { final:'🏆', insignia:'🏅', points:'📊', trade:'🔁', trade_ok:'✅', trade_no:'❌', impugno:'⚖️', comi:'📣', org:'🏀', offer:'🤝', deal:'✅', room:'⚔️', frozen:'🧊', pedradas:'🔮', lineup:'📋' };
 async function viewNotis(){
   $('#tab').innerHTML = '<p class="muted" style="margin-top:14px">Cargando…</p>';
   await loadNotis(); if(S.view !== 'notis') return;
@@ -1834,7 +1869,7 @@ async function renderHome(){
     sb.from('nba_transactions').select('*').order('happened_at', { ascending:false }).range(0, 79),
     sb.from('predictions').select('award').eq('league_id', lid).eq('user_id', me),
     sb.from('league_posts').select('*').eq('league_id', lid).order('created_at', { ascending:false }).range(0, 49),
-    loadRx(), loadImp(), loadIntel(), loadRumors(), (S.weekView = null, loadScores())
+    loadRx(), loadImp(), loadIntel(), loadRumors(), loadLastFinal(), (S.weekView = null, loadScores())
   ]);
   const posts = wl.data || [];
   const draftMsg = $('#wmsg')?.value || '', wallTop = document.querySelector('.wall')?.scrollTop || 0;
@@ -1849,7 +1884,9 @@ async function renderHome(){
   const news = (tx.data || []).map(x => ({ ...x, tags: x.player_ids.map(id => ({ id, tag: ownerTag(id) })).filter(t => t.tag) }))
     .filter(x => x.relevance >= 3 || x.player_ids.some(id => T.owner[id])).slice(0, 7);
   const lineupSaved = !!T.lineup || !!T.prevLineup;
+  S.homeAt = Date.now();
   $('#tab').innerHTML = `
+    ${finalCard(posts)}
     ${T.week && S.liveWeek && new Date(T.week.locks_at) - Date.now() > 864e5 ? `<div class="clock mini wait" style="margin-top:12px">
       <div class="between" style="gap:10px"><div><div class="small muted">Cierre jornada ${T.week.week_no} · ${fmtLock(T.week)}</div>
         <div class="cdl">faltan <span id="cd">${countdown(new Date(T.week.locks_at) - Date.now())}</span></div></div>
