@@ -555,7 +555,7 @@ async function loadTD(force){
   const week = w.data && w.data.week_no ? w.data : null;
   const none = Promise.resolve({ data: [] });
   const intel = loadIntel();
-  const [ro, rq, rs, lm, lu, wg, pv, plu, tr] = await Promise.all([
+  const [ro, rq, rs, lm, lu, wg, pv, plu, tr, bo] = await Promise.all([
     sb.from('rosters').select('player_id,user_id,price_paid_m').eq('league_id', lid),
     week ? sb.from('transfer_requests').select('*').eq('league_id', lid).eq('week_no', week.week_no).order('created_at') : none,
     week ? sb.from('player_reservations').select('*').eq('league_id', lid).eq('week_no', week.week_no) : none,
@@ -564,7 +564,8 @@ async function loadTD(force){
     week ? sb.rpc('week_games', { p_season: SEASON, p_week: week.week_no }) : none,
     sb.from('preference_vouchers').select('*').eq('league_id', lid),
     week ? sb.from('lineups').select('*').eq('league_id', lid).eq('user_id', me).lt('week_no', week.week_no).order('week_no', { ascending:false }).limit(1) : Promise.resolve({ data: [] }),
-    week ? sb.from('trades').select('*').eq('league_id', lid).eq('week_no', week.week_no).order('created_at') : none
+    week ? sb.from('trades').select('*').eq('league_id', lid).eq('week_no', week.week_no).order('created_at') : none,
+    sb.from('insignias').select('*').eq('league_id', lid).eq('user_id', me).in('kind', ['rookie2','captain2','bench50']).order('created_at')
   ]);
   if(ro.error){ fail(ro.error); return null; }
   await intel;
@@ -587,7 +588,8 @@ async function loadTD(force){
   const sanc = mrow.sanctions_m || 0, adj = mrow.adj_m || 0;
   const bal = S.league.budget_m - roster.reduce((a,id)=>a+paid[id],0) - sanc + adj + mineLive.reduce((a,t)=>a + (paid[t.player_out]||0) - price(t.player_in), 0)
     + [...tOut].reduce((a,id)=>a + (allPaid[id]||0), 0) - tIn.reduce((a,id)=>a + (allPaid[id]||0), 0);
-  S.td = { league: lid, week, games, owner, paid, cost, reqs, live, mineLive, outs, ins: new Set(ins), roster, eff, sanc, adj, bal, res: rs.data || [], lineup: lu.data, prevLineup: lu.data ? null : ((plu.data || [])[0] || null), vouchers: pv.data || [], allPaid, trades, tradeLock, tIn: new Set(tIn) };
+  S.td = { league: lid, week, games, owner, paid, cost, reqs, live, mineLive, outs, ins: new Set(ins), roster, eff, sanc, adj, bal, res: rs.data || [], lineup: lu.data, prevLineup: lu.data ? null : ((plu.data || [])[0] || null), vouchers: pv.data || [], allPaid, trades, tradeLock, tIn: new Set(tIn),
+    boosters: (bo.data || []).filter(x => x.status === 'available' || (week && x.used_week === week.week_no)) };
   return S.td;
 }
 const fmtLock = w => new Date(w.locks_at).toLocaleString('es-ES',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
@@ -665,7 +667,7 @@ function drawTeam(){
   const L = S.lu, T = S.td;
   const reqIn = id => T.mineLive.find(t => t.player_in === id);
   const sub = id => { const pl = S.byId[id] || {}; return `${pl.team||''} · ${T.cost[id]}M${pl.fp!=null?' · '+Number(pl.fp).toFixed(1)+' FPPG':''}${pl.rookie?' · <span class="pill ok">rookie</span>':''}`; };
-  const tag = id => { if(T.tIn && T.tIn.has(id)) return ' <span class="pill ok">Llega por traspaso</span>'; const r = reqIn(id); return r ? ` <span class="pill ${r.status==='negotiating'?'accent':''}">${r.status==='negotiating'?'En negociación':r.agreed?'Fichaje acordado':'Fichaje pendiente'}</span>` : ''; };
+  const tag = id => { const bz = (T.boosters || []).find(x => x.status === 'used' && x.target === id); if(bz) return ` <span class="pill accent">${INS[bz.kind][0]} ×2</span>`; if(T.tIn && T.tIn.has(id)) return ' <span class="pill ok">Llega por traspaso</span>'; const r = reqIn(id); return r ? ` <span class="pill ${r.status==='negotiating'?'accent':''}">${r.status==='negotiating'?'En negociación':r.agreed?'Fichaje acordado':'Fichaje pendiente'}</span>` : ''; };
   const strip = id => { if(L.open !== id) return ''; const r = reqIn(id);
     return `<li style="border-bottom:1px solid var(--line);padding:0 0 10px"><div class="row" style="width:100%">${r
       ? `${r.status==='negotiating' || r.agreed ? `<button class="sm" onclick="openRoom(${id})">Sala de negociación</button>` : ''}${r.agreed ? '' : `<button class="sm ghost" onclick="mkCancel('${r.id}')">Cancelar fichaje (vuelve ${pname(r.player_out)})</button>`}`
@@ -679,6 +681,7 @@ function drawTeam(){
       <div class="between"><div class="name">${T.week ? 'Jornada ' + T.week.week_no : 'Temporada terminada'}</div><span class="pill ${L.dirty?'':'ok'}" style="white-space:nowrap">${status}</span></div>
       <div class="small muted">${T.week ? 'Se puede cambiar hasta ' + fmtLock(T.week) + ' (1 h antes del primer partido). Hasta entonces nadie ve la tuya.' : ''}</div>
     </div>
+    ${boostersCard()}
     <h2>Quinteto titular <span class="small muted">· ${T.week ? tot + ' partidos entre los cinco' : ''}</span></h2>
     ${courtStrip(L.starters)}
     ${L.pending ? `<p class="small"><b>¿A quién sustituye ${pname(L.pending)}?</b> <a href="#" onclick="luCancel();return false">Cancelar</a></p>` : ''}
@@ -988,6 +991,35 @@ async function loadRumors(){
 }
 function rumorsHTML(){ const ago = d => { const m = Math.round((Date.now() - new Date(d)) / 60000); return m < 60 ? `hace ${Math.max(m,1)} min` : m < 1440 ? `hace ${Math.round(m/60)} h` : 'ayer'; };
   return (S.rum || []).map(r => `<li><span style="font-size:18px">${r.kind === 'inminente' ? '🚨' : '🗞️'}</span><div class="grow"><div style="font-style:italic;white-space:normal">${esc(r.body)}</div><div class="small muted">Rumor de mercado · ${ago(r.created_at)}</div></div></li>`).join(''); }
+// ---------- Boosters en Plantilla (uno por jornada) ----------
+function boostersCard(){
+  const T = S.td, L = S.lu; if(!T.week || !(T.boosters || []).length) return '';
+  const active = T.boosters.find(x => x.status === 'used');
+  const avail = T.boosters.filter(x => x.status === 'available');
+  const slots = L.starters.concat(L.bench.slice(0,1));
+  const elig = k => slots.filter(id => id !== L.c && (k !== 'rookie2' || S.byId[id]?.rookie));
+  const B = S.bsel || {};
+  return `<div class="card" style="border-color:var(--accent)"><div class="between"><div class="name">⚡ Boosters</div><span class="small muted">uno por jornada</span></div>
+    ${active ? `<div class="between" style="margin-top:6px"><div class="small"><b>${INS[active.kind][0]} ${INS[active.kind][1]}</b> activo en la jornada ${T.week.week_no}${active.target ? ': <b>' + pname(active.target) + '</b> puntúa ×2' : ': el banquillo suma al 50 %'}</div><button class="sm ghost" onclick="boosterOff(${active.id})">Quitar</button></div>
+      ${active.target && !slots.includes(active.target) ? '<p class="small" style="color:var(--bad);margin:6px 0 0">Ese jugador ya no está de titular ni de sexto: así el booster no hará nada.</p>' : ''}` : ''}
+    ${avail.map(x => `<div style="margin-top:8px"><div class="small"><b>${INS[x.kind][0]} ${INS[x.kind][1]}</b> <span class="muted">· ${esc(x.label)}</span></div>
+      ${active ? '<div class="small muted">Disponible para otra jornada.</div>' : x.kind === 'bench50' ? `<button class="sm" style="margin-top:4px" onclick="boosterOn(${x.id})">Activar en la jornada ${T.week.week_no}</button>` :
+        (elig(x.kind).length ? `<div class="row" style="margin-top:4px"><select id="bsel${x.id}" style="margin:0" onchange="(S.bsel=S.bsel||{})[${x.id}]=+this.value">${elig(x.kind).map(id => `<option value="${id}" ${B[x.id]===id?'selected':''}>${esc(S.byId[id]?.name || '')}</option>`).join('')}</select><button class="sm" style="flex:0 0 auto" onclick="boosterOn(${x.id})">Activar</button></div>`
+          : `<div class="small muted">${x.kind === 'rookie2' ? 'Alinea a un rookie de titular o de sexto hombre para poder usarlo.' : 'Necesitas un titular que no sea el capitán.'}</div>`)}</div>`).join('')}
+    <p class="small muted" style="margin:8px 0 0">Se aplica a tu alineación guardada de la jornada ${T.week.week_no}. Hasta el cierre puedes quitarlo y no lo gastas.</p></div>`;
+}
+async function boosterOn(id){
+  if(S.lu && S.lu.dirty) return toast('Guarda primero tu alineación: el booster se aplica a la alineación guardada');
+  const x = S.td.boosters.find(b => b.id === id), sel = $('#bsel' + id);
+  const target = x.kind === 'bench50' ? null : +(sel ? sel.value : 0);
+  const { error } = await sb.rpc('activate_booster', { p_insignia:id, p_target:target });
+  if(error) return fail(error);
+  S.td = null; S.lu = null; await loadTD(); toast('Booster activado para esta jornada'); renderTeam();
+}
+async function boosterOff(id){
+  const { error } = await sb.rpc('deactivate_booster', { p_insignia:id }); if(error) return fail(error);
+  S.td = null; S.lu = null; await loadTD(); toast('Booster quitado: vuelve a estar disponible'); renderTeam();
+}
 // ---------- Challenge: monedero de insignias y catálogo ----------
 const INS = { money:['💰','Millones'], captain2:['⚡','Segundo capitán'], rookie2:['🌟','Rookie ×2'], bench50:['🛡️','Banquillo al 50 %'], preference:['🎟️','Preferencia'], mention:['🏅','Mención'] };
 async function walletCard(){
@@ -998,7 +1030,7 @@ async function walletCard(){
   const ments = all.filter(x => x.kind === 'mention');
   return `<h2 style="margin-top:14px">Tu monedero</h2><div class="card">
     <div class="between"><span class="small muted">Millones ganados en challenges</span><b style="font-size:18px">💰 ${money}M</b></div>
-    ${avail.length ? `<ul class="list" style="margin-top:6px">${avail.map(x => `<li><span style="font-size:20px">${INS[x.kind]?.[0]||'🎁'}</span><div class="grow"><div class="name">${INS[x.kind]?.[1]||x.kind}</div><div class="small muted">${esc(x.label)}</div></div><span class="pill ok">Disponible</span></li>`).join('')}</ul>` : '<p class="small muted" style="margin:6px 0 0">Aún no tienes boosters. Llegan con los challenges.</p>'}
+    ${avail.length ? `<ul class="list" style="margin-top:6px">${avail.map(x => `<li><span style="font-size:20px">${INS[x.kind]?.[0]||'🎁'}</span><div class="grow"><div class="name">${INS[x.kind]?.[1]||x.kind}</div><div class="small muted">${esc(x.label)}</div></div><button class="sm" onclick="goTab('equipo')">Usar</button></li>`).join('')}</ul>` : '<p class="small muted" style="margin:6px 0 0">Aún no tienes boosters. Llegan con los challenges.</p>'}
     ${mine.filter(x => x.kind === 'money').length ? `<p class="small muted" style="margin:8px 0 0">${mine.filter(x => x.kind === 'money').map(x => `+${x.amount}M ${esc(x.label)}`).join(' · ')}. Los millones van directos a tu saldo.</p>` : ''}
     ${ments.length ? `<p class="small" style="margin:8px 0 0">🏅 ${ments.map(x => `<b>${esc(member(x.user_id).team)}</b>: ${esc(x.label)}`).join(' · ')}</p>` : ''}</div>`;
 }
@@ -1078,7 +1110,7 @@ async function viewJornada(){
   viewJornadaDraw();
 }
 function jRoles(x){ const d = x.detail || {}, sl = d.slots || [];
-  const cap = sl.find(s => s.mult === 2) || null;
+  const cap = sl.find(s => s.mult === 2 && !s.boost) || null;
   const tit = sl.filter(s => s.slot !== 'sexto' && s !== cap).sort((a,b) => posRank(a.player) - posRank(b.player));
   const six = sl.find(s => s.slot === 'sexto') || null;
   const bench = (d.bench_slots || []);
@@ -1098,6 +1130,7 @@ const BOXC = [['pts','PTS'],['reb','REB'],['ast','AST'],['stl','ROB'],['blk','TA
 function boxHead(t){ return `<tr class="bxh"><th>${t}</th><td>PJ</td><td>MEDIA</td><td>APORTA</td><td>MIN</td>${BOXC.map(c => `<td class="${c[2]||''}">${c[1]}</td>`).join('')}</tr>`; }
 function slotBox(s, role){ if(!s) return '';
   const subbed = !s.games && s.by;
+  if(s.boost && !role) role = (s.boost === 'rookie2' ? '🌟' : '⚡') + '×2';
   return boxRow(s.player, role, s, { src: subbed ? s.by : s.player, m: s.mult, b: s.bonus, pts: s.points, sub: subbed ? s.player : '', aporta: (s.points || 0) + (s.bonus || 0),
     note: subbed ? `No jugó · entra ${pname(s.by)}` : s.bonus ? '+2 Drafteados' : '' }); }
 function viewJornadaDraw(){
@@ -1724,6 +1757,8 @@ function postHTML(p){
   else if(p.kind === 'trade_offer') txt = `🔁 <b>${team(d.from)}</b> hace una oferta a <b>${team(d.to)}</b> por <b>${pname(d.player)}</b>.${[d.from,d.to].includes(S.user.id) ? ` <a href="#" onclick="openTrade('${d.thread}');return false">Ver</a>` : ''}`;
   else if(p.kind === 'trade_rejected') txt = `❌ <b>${team(d.to)}</b> rechaza la oferta de <b>${team(d.from)}</b>: ${pname(d.give)} por ${pname(d.get)}${d.amount ? ` + ${d.amount}M que ponía ${team(d.payer)}` : ''}.`;
   else if(p.kind === 'trade') txt = `🔁 <b>Traspaso:</b> ${team(d.from)} recibe a <b>${pname(d.get)}</b> y ${team(d.to)} a <b>${pname(d.give)}</b>${d.amount ? ` · ${team(d.payer)} pone ${d.amount}M` : ''}. Entra en la jornada ${d.week}.`;
+  else if(p.kind === 'month_awards') { const tm = a => (a || []).map(team).join(' y ') || '—';
+    txt = `🏅 <b>Premios de ${esc(d.mes)}</b><br>📈 Mánager: <b>${tm(d.manager)}</b> · 🌟 Rookie: <b>${tm(d.rookie)}</b> (Rookie ×2) · 🤕 Pupas: <b>${tm(d.pupas)}</b> (+1M)${d.arcade ? ` · 🕹️ Arcade: <b>${team(d.arcade)}</b>` : ''}`; }
   else if(p.kind === 'week_final') txt = `🏆 <b>Jornada ${d.week} · resultado final</b><br>${(d.rows || []).map(r => `${r.r}º ${team(r.u)} <b>${fmtP(r.t)}</b>`).join(' · ')}`;
   else if(p.kind === 'drafteados') txt = d.none ? `<b>Jornada ${d.week} cerrada sin quinteto de Drafteados.</b> Esta semana no hay millones.` : `<b>Quinteto Drafteados · jornada ${d.week}:</b> ${(d.players||[]).map(pname).join(', ')}. +1M de saldo por cada uno que tuvieras alineado. Jornada cerrada.`;
   else return '';
@@ -1788,7 +1823,7 @@ function slotRow(sl, closed){
   else if(!closed && tot) sub = `sin partidos confirmados · ${tot} ${tot===1?'partido':'partidos'} esta semana${sl.by ? ` · de momento entra <b style="color:var(--text)">${name(sl.by)}</b>` : ''}`;
   else sub = sl.by ? `no jugó · entra <b style="color:var(--text)">${name(sl.by)}</b>` : 'no jugó · sin suplente válido';
   const src = !g && sl.by ? sl.by : sl.player;
-  return `<li class="bdrow" style="padding:6px 0" onclick="bdToggle(this)" data-p="${src}" data-k="slot" data-m="${sl.mult||1}" data-b="${sl.bonus||0}" data-pts="${sl.points||0}" data-sub="${!g && sl.by ? sl.player : ''}">${posBadge(posOf(sl.player),1)}<div class="grow"><div class="name" style="font-size:14px">${name(sl.player)}${injIcon(sl.player)}${sl.slot==='sexto'?' <span class="pill">6º</span>':''}${sl.mult===2?' <span class="pill accent">×2</span>':''}</div>
+  return `<li class="bdrow" style="padding:6px 0" onclick="bdToggle(this)" data-p="${src}" data-k="slot" data-m="${sl.mult||1}" data-b="${sl.bonus||0}" data-pts="${sl.points||0}" data-sub="${!g && sl.by ? sl.player : ''}">${posBadge(posOf(sl.player),1)}<div class="grow"><div class="name" style="font-size:14px">${name(sl.player)}${injIcon(sl.player)}${sl.slot==='sexto'?' <span class="pill">6º</span>':''}${sl.mult===2?` <span class="pill accent">${sl.boost === 'rookie2' ? '🌟 ' : sl.boost === 'captain2' ? '⚡ ' : ''}×2</span>`:''}</div>
     <div class="small muted">${sub}${sl.bonus ? ' · <b style="color:var(--accent)">+2 Drafteados</b>' : ''}</div></div>
     <span class="price">${fmtP(sl.points + (sl.bonus||0))}</span></li>`;
 }
