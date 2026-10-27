@@ -1110,7 +1110,8 @@ async function viewJornada(){
   viewJornadaDraw();
 }
 function jRoles(x){ const d = x.detail || {}, sl = d.slots || [];
-  const cap = sl.find(s => s.mult === 2 && !s.boost) || null;
+  // Capitán: el que puntúa ×2 (o el vice si el capitán no jugó); si aún no ha jugado nadie, el capitán elegido
+  const cap = sl.find(s => s.mult === 2 && !s.boost) || sl.find(s => s.player === d.captain && s.slot !== 'sexto') || null;
   const tit = sl.filter(s => s.slot !== 'sexto' && s !== cap).sort((a,b) => posRank(a.player) - posRank(b.player));
   const six = sl.find(s => s.slot === 'sexto') || null;
   const bench = (d.bench_slots || []);
@@ -1131,6 +1132,8 @@ function boxHead(t){ return `<tr class="bxh"><th>${t}</th><td>PJ</td><td>MEDIA</
 function slotBox(s, role){ if(!s) return '';
   const subbed = !s.games && s.by;
   if(s.boost && !role) role = (s.boost === 'rookie2' ? '🌟' : '⚡') + '×2';
+  const dd = (S.jdata.rows.find(r => (r.detail?.slots || []).includes(s)) || {}).detail || {};
+  if(!role && s.player === dd.vice) role = 'VC';
   return boxRow(s.player, role, s, { src: subbed ? s.by : s.player, m: s.mult, b: s.bonus, pts: s.points, sub: subbed ? s.player : '', aporta: (s.points || 0) + (s.bonus || 0),
     note: subbed ? `No jugó · entra ${pname(s.by)}` : s.bonus ? '+2 Drafteados' : '' }); }
 function viewJornadaDraw(){
@@ -1142,7 +1145,7 @@ function viewJornadaDraw(){
     const tabs = `<div class="seg" style="margin-bottom:10px;overflow-x:auto">${J.rows.map(r => `<button class="${r.user_id===S.jteam?'on':''}" style="white-space:nowrap" onclick="S.jteam='${r.user_id}';viewJornadaDraw()">${esc(r.team_name.trim().split(/\s+/)[0])}</button>`).join('')}</div>`;
     if(!x || !x.detail){ el.innerHTML = tabs + '<p class="muted small">Las alineaciones rivales se ven al cerrar la jornada.</p>'; return; }
     const R = jRoles(x);
-    el.innerHTML = tabs + `<div class="between" style="margin:0 2px 8px"><span class="name">${avatar(x.user_id, 22)} ${esc(x.team_name)}</span><span><span class="small muted">${x.rank ? x.rank + 'º · ' : ''}</span><b style="font-size:18px">${fmtP(x.total)}</b></span></div>
+    el.innerHTML = tabs + `<div class="between" style="margin:0 2px 8px"><span class="name">${avatar(x.user_id, 22)} ${esc(x.team_name)}</span><span><span class="small muted">${x.rank && +x.total > 0 ? x.rank + 'º · ' : ''}</span><b style="font-size:18px">${fmtP(x.total)}</b></span></div>
       <div class="bxwrap"><table class="box">
         ${boxHead('CAPITÁN')}${slotBox(R.cap, '×2')}
         ${boxHead('TITULARES')}${R.tit.map(s => slotBox(s, '')).join('')}
