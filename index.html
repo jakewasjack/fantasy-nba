@@ -109,6 +109,13 @@ table.h2h .h2v{font-weight:700;font-size:15px;color:var(--text)} table.h2h .h2t 
 table.h2h b.up{color:var(--ok)} table.h2h b.down{color:var(--bad)}
 .fcard{border-color:var(--accent);background:linear-gradient(160deg,rgba(242,140,40,.16),var(--surface) 60%)}
 .chron{border-color:#3a3f4b}
+.ment{color:var(--accent);font-weight:600}
+.ment.me{background:rgba(242,140,40,.18);border-radius:6px;padding:0 4px}
+.mchips{display:flex;gap:6px;margin:0 0 8px}
+.mchips .ment{background:var(--surface2);border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:13px}
+li.ment-me{background:rgba(242,140,40,.08);margin:0 -14px;padding-left:14px;padding-right:14px}
+li.flash{animation:flash 1.6s ease-out}
+@keyframes flash{0%{background:rgba(242,140,40,.35)}100%{background:transparent}}
 .chron .mast{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid var(--text);padding-bottom:4px;margin-bottom:10px}
 .chron .mast b{font-family:Georgia,'Times New Roman',serif;font-size:19px;letter-spacing:.02em;font-style:italic}
 .chron .hl{font-family:Georgia,'Times New Roman',serif;font-size:21px;font-weight:700;line-height:1.2;margin:0 0 6px}
@@ -1397,7 +1404,7 @@ async function loadNotis(){
   S.notiSeen = since; S.unread = S.notis.filter(x => new Date(x.created_at) > since).length;
   const b = $('#bellN'); if(b){ b.textContent = S.unread > 9 ? '9+' : S.unread; b.classList.toggle('hidden', !S.unread); }
 }
-const NICON = { final:'🏆', insignia:'🏅', points:'📊', trade:'🔁', trade_ok:'✅', trade_no:'❌', impugno:'⚖️', comi:'📣', org:'🏀', offer:'🤝', deal:'✅', room:'⚔️', frozen:'🧊', pedradas:'🔮', lineup:'📋', chronicle:'📰' };
+const NICON = { final:'🏆', insignia:'🏅', points:'📊', trade:'🔁', trade_ok:'✅', trade_no:'❌', impugno:'⚖️', comi:'📣', org:'🏀', offer:'🤝', deal:'✅', room:'⚔️', frozen:'🧊', pedradas:'🔮', lineup:'📋', chronicle:'📰', mention:'💬' };
 async function viewNotis(){
   $('#tab').innerHTML = '<p class="muted" style="margin-top:14px">Cargando…</p>';
   await loadNotis(); if(S.view !== 'notis') return;
@@ -1414,6 +1421,7 @@ async function viewNotis(){
 setInterval(() => { if(S.league && !document.hidden) loadNotis(); }, 60000);
 document.addEventListener('visibilitychange', () => { if(!document.hidden && S.league) loadNotis(); });
 async function openLink(k){
+  if(String(k).startsWith('post:')){ S.postFocus = +k.slice(5); return goTab('hoy'); }
   if(k !== 'chronicle') return goTab(k);
   S.chronOpen = true; await goTab('hoy');
 }
@@ -1802,7 +1810,8 @@ async function tribunalCard(){
 function postHTML(p){
   const when = new Date(p.created_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}), d = p.data || {};
   const team = uid => esc(member(uid).team);
-  if(p.kind === 'msg') return `<li style="align-items:flex-start">${avatar(p.user_id, 32)}<div class="grow"><div class="small muted"><b style="color:var(--text)">${team(p.user_id)}</b> · ${when}</div><div style="overflow-wrap:anywhere">${esc(p.body)}</div>${rxBar('post', p.id)}</div></li>`;
+  if(p.kind === 'msg'){ const forMe = (d.mentions || []).includes(S.user.id) && p.user_id !== S.user.id;
+    return `<li id="post-${p.id}" class="${forMe ? 'ment-me' : ''}" style="align-items:flex-start">${avatar(p.user_id, 32)}<div class="grow"><div class="small muted"><b style="color:var(--text)">${team(p.user_id)}</b> · ${when}</div><div style="overflow-wrap:anywhere">${mentHTML(p.body)}</div>${rxBar('post', p.id)}</div></li>`; }
   let txt = '';
   if(p.kind === 'room_open') txt = `<b>${(d.users||[]).map(team).join(' y ')}</b> se pelean por <b>${pname(d.player)}</b>. Mesa de negociación abierta.`;
   else if(p.kind === 'deal') txt = `<b>Acuerdo alcanzado:</b> ${team(d.keeper)} se queda a <b>${pname(d.player)}</b>.`;
@@ -1819,7 +1828,29 @@ function postHTML(p){
   else return '';
   return `<li style="align-items:flex-start"><span class="pill accent" style="flex-shrink:0;margin-top:2px">Liga</span><div class="grow"><div>${txt}</div><div class="small muted">${when}</div>${rxBar('post', p.id)}${impBar(p)}</div></li>`;
 }
-async function wallSend(e){ e.preventDefault(); const i = $('#wmsg'), v = i.value.trim(); if(!v) return;
+// ---------- Menciones en el Trash Talk ----------
+const firstWord = t => String(t || '').trim().split(/\s+/)[0];
+function mentHTML(body){
+  return esc(body).replace(/@\{([0-9a-f-]{36})\}/g, (x, uid) => { const m = (S.members || []).find(z => z.id === uid);
+    return m ? `<span class="ment ${uid === S.user.id ? 'me' : ''}">@${esc(firstWord(m.team))}</span>` : '@'; });
+}
+function mentChips(){
+  const others = (S.members || []).filter(m => m.id !== S.user.id);
+  return others.length ? `<div class="mchips">${others.map(m => `<button type="button" class="ment" onmousedown="event.preventDefault()" onclick="mentAdd('${m.id}')">@${esc(firstWord(m.team))}</button>`).join('')}</div>` : '';
+}
+function mentAdd(uid){
+  const i = $('#wmsg'), m = member(uid); if(!i || !m) return;
+  const tag = '@' + firstWord(m.team) + ' ', a = i.selectionStart ?? i.value.length, b = i.selectionEnd ?? a;
+  const pre = i.value.slice(0, a), sp = pre && !/\s$/.test(pre) ? ' ' : '';
+  i.value = pre + sp + tag + i.value.slice(b); const pos = (pre + sp + tag).length; i.focus(); i.setSelectionRange(pos, pos);
+}
+function mentEncode(v){
+  const re = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  (S.members || []).forEach(m => { [m.team.trim(), firstWord(m.team)].forEach(lbl => {
+    v = v.replace(new RegExp('@' + re(lbl) + '(?![\\wÀ-ÿ])', 'gi'), '@{' + m.id + '}'); }); });
+  return v;
+}
+async function wallSend(e){ e.preventDefault(); const i = $('#wmsg'), v = mentEncode(i.value.trim()); if(!v) return;
   const { error } = await sb.rpc('post_wall', { p_league:S.league.id, p_body:v });
   if(error) return fail(error); i.value = ''; renderHome(); }
 
@@ -1994,7 +2025,7 @@ async function renderHome(){
     ${predOpen && preds < 6 ? `<div class="card between"><div><div class="name">Pedradas de temporada</div><div class="small muted">Llevas ${preds} de 6 · 3 puntos por acierto</div></div><button class="sm" onclick="S.tab='pred';render()">Completar</button></div>` : ''}
     <h2>Trash Talk</h2>
     <div class="card" style="padding:10px 14px">
-      <form id="wform" class="row"><input id="wmsg" maxlength="280" placeholder="Suelta algo a la liga…" value="${esc(draftMsg)}" style="margin:0"><button class="sm" style="flex:0 0 auto">Enviar</button></form>
+      ${mentChips()}<form id="wform" class="row"><input id="wmsg" maxlength="280" placeholder="Suelta algo a la liga…" value="${esc(draftMsg)}" style="margin:0"><button class="sm" style="flex:0 0 auto">Enviar</button></form>
       <div class="wall"><ul class="list" style="margin-top:6px">${posts.map(postHTML).join('') || '<li class="muted">El muro está vacío. Alguien tiene que tirar la primera piedra.</li>'}</ul></div>
       ${posts.length > 4 ? `<p class="small muted" style="margin:6px 0 0;text-align:center">Desliza dentro del muro para ver más · ${posts.length} mensajes</p>` : ''}
     </div>
@@ -2016,6 +2047,7 @@ async function renderHome(){
     </ul></div>`;
   $('#wform').onsubmit = wallSend;
   const wEl = document.querySelector('.wall'); if(wEl) wEl.scrollTop = wallTop;
+  if(S.postFocus){ const el = $('#post-' + S.postFocus); S.postFocus = null; if(el){ el.scrollIntoView({ behavior:'smooth', block:'center' }); el.classList.add('flash'); } }
   if(S.chronOpen){ S.chronOpen = false; const ch = $('#chron'); if(ch){ const d = ch.querySelector('details'); if(d) d.open = true; ch.scrollIntoView({ behavior:'smooth', block:'start' }); } }
   stopTick();
   if(T.week) S.tick = setInterval(() => { const el = $('#cd'); if(!el || S.tab !== 'hoy') return stopTick(); el.textContent = countdown(new Date(T.week.locks_at) - Date.now()); }, 1000);
