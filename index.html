@@ -108,6 +108,16 @@ table.h2h .h2l{text-align:left;width:40%} table.h2h .h2r{text-align:right;width:
 table.h2h .h2v{font-weight:700;font-size:15px;color:var(--text)} table.h2h .h2t td{padding-bottom:12px}
 table.h2h b.up{color:var(--ok)} table.h2h b.down{color:var(--bad)}
 .fcard{border-color:var(--accent);background:linear-gradient(160deg,rgba(242,140,40,.16),var(--surface) 60%)}
+.chron{border-color:#3a3f4b}
+.chron .mast{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid var(--text);padding-bottom:4px;margin-bottom:10px}
+.chron .mast b{font-family:Georgia,'Times New Roman',serif;font-size:19px;letter-spacing:.02em;font-style:italic}
+.chron .hl{font-family:Georgia,'Times New Roman',serif;font-size:21px;font-weight:700;line-height:1.2;margin:0 0 6px}
+.chron .ld{font-weight:600;margin:0 0 6px;line-height:1.45}
+.chron .bd p{margin:8px 0;line-height:1.55}
+.chron .by{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.chron details summary{list-style:none;cursor:pointer;color:var(--accent);font-weight:600;font-size:14px;margin-top:4px}
+.chron details summary::-webkit-details-marker{display:none}
+.chron details[open] summary{display:none}
 .podium{display:flex;justify-content:space-around;align-items:flex-end;text-align:center;gap:6px}
 .podium .pd{flex:1;padding:8px 4px;border-radius:10px} .podium .pd.me{background:rgba(242,140,40,.12)}
 .podium .pd:first-child{order:2} .podium .pd:nth-child(2){order:1} .podium .pd:nth-child(3){order:3}
@@ -1076,6 +1086,44 @@ function finalCard(posts){
     <div class="row" style="margin-top:10px"><button class="sm" onclick="S.jw=${F.week};openJornada('box')">📊 Ver box score</button>${canImp ? `<button class="sm ${impd?'':'ghost'}" onclick="doImp(${post.id})">${impd ? '⚖️ Impugnado' : '⚖️ Impugnar'}</button>` : ''}</div>
   </div>`;
 }
+// ---------- The Chronicle (crónica diaria de Redacción Drafteados) ----------
+async function loadChronicle(){
+  S.chron = null;
+  try {
+    const { data } = await sb.from('chronicles').select('*').eq('league_id', S.league.id).order('game_date', { ascending:false }).limit(1);
+    const c = data && data[0]; if(c && Date.now() - new Date(c.created_at) < 4*864e5) S.chron = c;
+  } catch(e){}
+}
+const chronDate = d => new Date(d + 'T12:00:00').toLocaleDateString('es-ES', { weekday:'long', day:'numeric', month:'long' });
+const chronBody = t => esc(t || '').split(/\n\s*\n/).map(x => `<p>${x.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>')}</p>`).join('');
+function chronArticle(c, open){
+  return `<div class="hl">${esc(c.headline)}</div>
+    <p class="ld">${esc(c.lead)}</p>
+    <details ${open ? 'open' : ''} ontoggle="if(this.open) chronRead(${c.id})"><summary>Leer la crónica completa ›</summary>
+      <div class="bd">${chronBody(c.body)}</div>
+      <div class="by">${esc(c.byline || 'Redacción Drafteados')}</div></details>`;
+}
+function chronicleCard(){
+  const c = S.chron; if(!c) return '';
+  return `<div class="card chron" id="chron" style="margin-top:12px">
+    <div class="mast"><b>The Chronicle</b><span class="small muted">${chronDate(c.game_date)}</span></div>
+    ${chronArticle(c, false)}
+    <p style="margin:10px 0 0"><a href="#" onclick="openView('hemeroteca');return false" class="small">📚 Hemeroteca</a></p>
+  </div>`;
+}
+async function chronRead(id){ S.chronRead = S.chronRead || {}; if(S.chronRead[id]) return; S.chronRead[id] = 1; try { await sb.rpc('chronicle_read', { p_id:id }); } catch(e){} }
+async function viewHemeroteca(){
+  $('#tab').innerHTML = '<p class="muted" style="margin-top:14px">Cargando…</p>';
+  const { data, error } = await sb.from('chronicles').select('id,game_date,week_no,headline,lead,body,byline').eq('league_id', S.league.id).order('game_date', { ascending:false });
+  if(S.view !== 'hemeroteca') return; if(error) return fail(error);
+  const byW = {}; (data || []).forEach(c => (byW[c.week_no] = byW[c.week_no] || []).push(c));
+  $('#tab').innerHTML = `<p style="margin-top:14px"><a href="#" onclick="closeView();return false">← Volver</a></p>
+    <h1 style="font-family:Georgia,'Times New Roman',serif;font-style:italic">The Chronicle</h1>
+    <p class="small muted" style="margin-top:0">Hemeroteca · todas las crónicas de Redacción Drafteados</p>
+    ${Object.keys(byW).sort((a,b) => b - a).map(w => `<h2>Jornada ${w}</h2>${byW[w].map(c => `<div class="card chron">
+      <div class="mast"><span class="small muted">${chronDate(c.game_date)}</span></div>${chronArticle(c, false)}</div>`).join('')}`).join('')
+      || '<div class="card muted">Todavía no se ha publicado ninguna crónica.</div>'}`;
+}
 // Al volver a la app, Hoy se refresca sola si lleva un rato sin actualizarse
 document.addEventListener('visibilitychange', () => { if(!document.hidden && S.league && S.tab === 'hoy' && !S.view && Date.now() - (S.homeAt || 0) > 120000) renderHome(); });
 // ---------- Página Jornada: box score por equipo y cara a cara ----------
@@ -1349,7 +1397,7 @@ async function loadNotis(){
   S.notiSeen = since; S.unread = S.notis.filter(x => new Date(x.created_at) > since).length;
   const b = $('#bellN'); if(b){ b.textContent = S.unread > 9 ? '9+' : S.unread; b.classList.toggle('hidden', !S.unread); }
 }
-const NICON = { final:'🏆', insignia:'🏅', points:'📊', trade:'🔁', trade_ok:'✅', trade_no:'❌', impugno:'⚖️', comi:'📣', org:'🏀', offer:'🤝', deal:'✅', room:'⚔️', frozen:'🧊', pedradas:'🔮', lineup:'📋' };
+const NICON = { final:'🏆', insignia:'🏅', points:'📊', trade:'🔁', trade_ok:'✅', trade_no:'❌', impugno:'⚖️', comi:'📣', org:'🏀', offer:'🤝', deal:'✅', room:'⚔️', frozen:'🧊', pedradas:'🔮', lineup:'📋', chronicle:'📰' };
 async function viewNotis(){
   $('#tab').innerHTML = '<p class="muted" style="margin-top:14px">Cargando…</p>';
   await loadNotis(); if(S.view !== 'notis') return;
@@ -1360,11 +1408,15 @@ async function viewNotis(){
       <span style="font-size:20px;line-height:1.2">${NICON[x.kind] || '🔔'}</span>
       <div class="grow"><div class="name" style="white-space:normal">${esc(x.title)}</div>${x.body ? `<div class="small" style="overflow-wrap:anywhere">${esc(x.body)}</div>` : ''}
         <div class="small muted">${x.kind === 'comi' ? 'Comisionado · ' : x.kind === 'org' ? 'Organización · ' : ''}${new Date(x.created_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div></div>
-      ${x.link ? `<button class="sm ghost" onclick="S.view=null;goTab('${x.link}')">Ver</button>` : ''}</li>`).join('') || '<li class="muted">Nada por aquí todavía.</li>'}</ul></div>`;
+      ${x.link ? `<button class="sm ghost" onclick="S.view=null;openLink('${x.link}')">Ver</button>` : ''}</li>`).join('') || '<li class="muted">Nada por aquí todavía.</li>'}</ul></div>`;
   await sb.rpc('notif_mark_seen'); S.unread = 0;
 }
 setInterval(() => { if(S.league && !document.hidden) loadNotis(); }, 60000);
 document.addEventListener('visibilitychange', () => { if(!document.hidden && S.league) loadNotis(); });
+async function openLink(k){
+  if(k !== 'chronicle') return goTab(k);
+  S.chronOpen = true; await goTab('hoy');
+}
 function closeView(){ const back = S.view === 'arcade' ? 'pred' : null; arcStop(); S.view = null; if(back) S.tab = back; render(); }
 // ---------- Arcade: «Piedras desde el triple» ----------
 const ARC = { game:'triples' };
@@ -1542,7 +1594,7 @@ async function arcGameOver(){ const g = ARC.g, ov = $('#arcOver'); if(!ov) retur
 }
 
 function renderView(){
-  ({ perfil:viewProfile, reglas:viewRules, comi:viewComm, arcade:viewArcade, notis:viewNotis, jornada:viewJornada })[S.view]();
+  ({ perfil:viewProfile, reglas:viewRules, comi:viewComm, arcade:viewArcade, notis:viewNotis, jornada:viewJornada, hemeroteca:viewHemeroteca })[S.view]();
 }
 function viewProfile(){
   const me = member(S.user.id), cur = me.avatar || '';
@@ -1909,7 +1961,7 @@ async function renderHome(){
     sb.from('nba_transactions').select('*').order('happened_at', { ascending:false }).range(0, 79),
     sb.from('predictions').select('award').eq('league_id', lid).eq('user_id', me),
     sb.from('league_posts').select('*').eq('league_id', lid).order('created_at', { ascending:false }).range(0, 49),
-    loadRx(), loadImp(), loadIntel(), loadRumors(), loadLastFinal(), (S.weekView = null, loadScores())
+    loadRx(), loadImp(), loadIntel(), loadRumors(), loadLastFinal(), loadChronicle(), (S.weekView = null, loadScores())
   ]);
   const posts = wl.data || [];
   const draftMsg = $('#wmsg')?.value || '', wallTop = document.querySelector('.wall')?.scrollTop || 0;
@@ -1938,6 +1990,7 @@ async function renderHome(){
       <button class="sm ${lineupSaved?'ghost':''}" style="${lineupSaved?'':'background:var(--accent-ink);color:var(--accent)'}" onclick="S.tab='equipo';render()">${lineupSaved ? 'Revisar' : 'Alinear'}</button></div>
     </div>` : '<div class="clock wait" style="margin-top:12px">Temporada terminada.</div>'}
     ${jornadaCard()}
+    ${chronicleCard()}
     ${predOpen && preds < 6 ? `<div class="card between"><div><div class="name">Pedradas de temporada</div><div class="small muted">Llevas ${preds} de 6 · 3 puntos por acierto</div></div><button class="sm" onclick="S.tab='pred';render()">Completar</button></div>` : ''}
     <h2>Trash Talk</h2>
     <div class="card" style="padding:10px 14px">
@@ -1963,6 +2016,7 @@ async function renderHome(){
     </ul></div>`;
   $('#wform').onsubmit = wallSend;
   const wEl = document.querySelector('.wall'); if(wEl) wEl.scrollTop = wallTop;
+  if(S.chronOpen){ S.chronOpen = false; const ch = $('#chron'); if(ch){ const d = ch.querySelector('details'); if(d) d.open = true; ch.scrollIntoView({ behavior:'smooth', block:'start' }); } }
   stopTick();
   if(T.week) S.tick = setInterval(() => { const el = $('#cd'); if(!el || S.tab !== 'hoy') return stopTick(); el.textContent = countdown(new Date(T.week.locks_at) - Date.now()); }, 1000);
 }
