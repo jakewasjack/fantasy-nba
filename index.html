@@ -1441,6 +1441,13 @@ const arcFmt = (v, g) => ARCG[g || ARC.game].fmt(v);
 async function arcLoad(){
   const { data:all } = await sb.from('arcade_scores').select('id,user_id,score,initials,created_at,game').eq('league_id', S.league.id).order('score', { ascending:false }).range(0, 499);
   ARC.recs = {}; (all || []).forEach(r => { if(!ARC.recs[r.game]) ARC.recs[r.game] = r; });
+  // Arcade del mes: en cada juego, 3 puntos al mejor récord del mes y 1 al segundo; desempata quien más partidas juega
+  { const ymA = new Date().toLocaleDateString('sv-SE', { timeZone:'Europe/Madrid' }).slice(0,7), best = {}, plays = {};
+    (all || []).filter(r => r.score > 0 && new Date(r.created_at).toLocaleDateString('sv-SE', { timeZone:'Europe/Madrid' }).slice(0,7) === ymA).forEach(r => {
+      const k = r.game + '|' + r.user_id; if(!best[k] || r.score > best[k].score) best[k] = r; plays[r.user_id] = (plays[r.user_id] || 0) + 1; });
+    const pts = {}; Object.keys(ARCG).forEach(g => { const rk = Object.values(best).filter(r => r.game === g).sort((a,b) => b.score - a.score);
+      let pos = 0, prev = null; rk.forEach((r, i) => { if(r.score !== prev){ pos = i + 1; prev = r.score; } pts[r.user_id] = (pts[r.user_id] || 0) + (pos === 1 ? 3 : pos === 2 ? 1 : 0); }); });
+    ARC.month = Object.keys(plays).map(u => ({ u, pts:pts[u] || 0, plays:plays[u] })).sort((a,b) => b.pts - a.pts || b.plays - a.plays); }
   const rows = (all || []).filter(r => r.game === ARC.game);
   const best = {}; rows.forEach(r => { if(!best[r.user_id] || r.score > best[r.user_id].score) best[r.user_id] = r; });
   const now = new Date(), ym = now.toLocaleDateString('sv-SE', { timeZone:'Europe/Madrid' }).slice(0,7);
@@ -1469,8 +1476,8 @@ async function viewArcade(){
     <button style="width:100%;font-size:18px;padding:14px" onclick="arcOpen()">▶ Jugar</button>
     <p class="small muted" style="margin:8px 0 0">Tu récord: <b style="color:var(--text)">${ARC.mine ? arcFmt(ARC.mine) : '—'}</b></p>
     <h2>Arcade del mes · ${ARC.monthName}</h2>
-    <div class="card small">${ARC.king ? `👑 <b>${esc(tag3(ARC.king))}</b> · ${esc(member(ARC.king.user_id).team)} · <b>${arcFmt(ARC.king.score)}</b>` : 'Este mes nadie ha jugado todavía.'}
-      <p class="muted" style="margin:6px 0 0">${ARC.game === 'triples' ? 'Premio honorífico al mejor récord del mes. No suma puntos en la liga.' : 'Gloria eterna, de momento. No suma puntos en la liga.'}</p></div>
+    <div class="card small">${(ARC.month || []).length ? `<ul class="list">${ARC.month.map((x, i) => `<li><span class="pill">${i ? i + 1 : '👑'}</span><div class="grow">${esc(member(x.u).team)}<div class="small muted">${x.plays} ${x.plays === 1 ? 'partida' : 'partidas'}</div></div><span class="price">${x.pts} pts</span></li>`).join('')}</ul>` : 'Este mes nadie ha jugado todavía.'}
+      <p class="muted" style="margin:6px 0 0">Cuentan todos los juegos: en cada uno, 3 puntos al mejor récord del mes y 1 al segundo. Si hay empate, gana quien más ha jugado. Premio honorífico, no suma puntos en la liga.</p></div>
     <h2>Récords de la liga</h2>
     <div class="card" style="padding:4px 14px"><ul class="list">${(ARC.top || []).map((r,i) => `<li><span class="pill">${i+1}</span>
       <b style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.1em;min-width:44px">${esc(tag3(r))}</b>
