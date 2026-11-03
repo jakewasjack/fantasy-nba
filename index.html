@@ -1764,15 +1764,30 @@ async function loadRx(){
 function rxBar(type, id){
   const k = type + ':' + id, r = (S.rx || {})[k] || { c:{}, mine:null }, open = S.rxOpen === k;
   const chips = RX.filter(e => r.c[e]).map(e => `<button class="${r.mine===e?'on':''}" onclick="doReact('${type}','${id}','${e}')">${e} ${r.c[e]}</button>`).join('');
-  const picker = open ? RX.map(e => `<button class="${r.mine===e?'on':''}" onclick="doReact('${type}','${id}','${e}')" aria-label="Reaccionar ${e}">${e}</button>`).join('') : `<button class="add" onclick="S.rxOpen='${k}';rxRedraw()" aria-label="Reaccionar">☺ +</button>`;
-  return `<div class="rx${open ? ' pick' : ''}">${open ? '' : chips}${picker}</div>`;
+  const picker = open ? RX.map(e => `<button class="${r.mine===e?'on':''}" onclick="doReact('${type}','${id}','${e}')" aria-label="Reaccionar ${e}">${e}</button>`).join('') : `<button class="add" onclick="rxOpenAt('${type}','${id}')" aria-label="Reaccionar">☺ +</button>`;
+  return `<div class="rx${open ? ' pick' : ''}" data-rx="${k}">${open ? '' : chips}${picker}</div>`;
 }
 function rxRedraw(){ if(S.view) return; if(S.tab === 'draft') renderDraft(); else if(S.tab === 'hoy') renderHome(); }
+// Repinta solo la barra de reacciones afectada: sin recargar la pantalla ni esperar a la red
+function rxPaint(type, id){
+  const k = type + ':' + id;
+  document.querySelectorAll(`[data-rx="${CSS.escape(k)}"]`).forEach(el => { el.outerHTML = rxBar(type, id); });
+}
+function rxOpenAt(type, id){
+  const prev = S.rxOpen; S.rxOpen = type + ':' + id;
+  if(prev){ const [pt, ...pid] = prev.split(':'); rxPaint(pt, pid.join(':')); }
+  rxPaint(type, id);
+}
 async function doReact(type, id, e){
-  S.rxOpen = null;
+  const k = type + ':' + id; S.rxOpen = null;
+  S.rx = S.rx || {}; const before = JSON.parse(JSON.stringify(S.rx[k] || { c:{}, mine:null }));
+  const r = S.rx[k] = JSON.parse(JSON.stringify(before));
+  if(r.mine){ r.c[r.mine] = (r.c[r.mine] || 1) - 1; if(!r.c[r.mine]) delete r.c[r.mine]; }
+  if(r.mine === e) r.mine = null; else { r.c[e] = (r.c[e] || 0) + 1; r.mine = e; }
+  rxPaint(type, id);
   const { error } = await sb.rpc('react', { p_league:S.league.id, p_type:type, p_target:String(id), p_emoji:e });
-  if(error) return fail(error);
-  await loadRx(); rxRedraw();
+  if(error){ S.rx[k] = before; rxPaint(type, id); return fail(error); }
+  loadRx();
 }
 // ---------- Impugno! (una por persona y sentencia; lo propio no se impugna) ----------
 const IMP_KINDS = { signing: d => d.user, deal: d => d.keeper, week_final: d => d.winner, trade: d => d.from };
