@@ -1102,7 +1102,7 @@ async function loadChronicle(){
   } catch(e){}
 }
 const chronDate = d => new Date(d + 'T12:00:00').toLocaleDateString('es-ES', { weekday:'long', day:'numeric', month:'long' });
-const chronBody = t => esc(t || '').split(/\n\s*\n/).map(x => `<p>${x.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>')}</p>`).join('');
+const chronBody = t => esc(String(t || '').replace(/\\n/g, '\n')).split(/\n\s*\n/).map(x => `<p>${x.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>')}</p>`).join('');
 function chronArticle(c, open){
   return `<div class="hl">${esc(c.headline)}</div>
     <p class="ld">${esc(c.lead)}</p>
