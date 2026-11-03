@@ -1645,9 +1645,9 @@ async function arcGameOver(){ const g = ARC.g, ov = $('#arcOver'); if(!ov) retur
 // ---------- Arcade: AIR (mate desde lo más lejos posible) ----------
 // Por intento: velocidad (toque), despegue (toque), ángulo (toque) y, ya en el aire y cayendo, hasta dos toques de impulso.
 // El mate solo entra si llegas con las manos justo por encima del aro: corto pega en el hierro, alto escupe en el tablero.
-const AIR = { F:192, PX:26, RIM:293, START:8.5, FT:4.6, G:9.8, SLOW:.42, KICK:.85, KICKS:2, LO:3.05, HI:3.7 };
+const AIR = { F:192, PX:38, PY:26, RIM:293, START:8.0, FT:4.6, G:9.8, SLOW:.34, KICK:.85, KICKS:2, LO:3.05, HI:3.7 };
 const airX = d => AIR.RIM - d * AIR.PX;
-const airY = h => AIR.F - h * AIR.PX;
+const airY = h => AIR.F - h * AIR.PY;   // escala vertical real; la horizontal se estira para que el vuelo cruce la pantalla
 const airM = v => v.toLocaleString('es-ES', { minimumFractionDigits:2, maximumFractionDigits:2 }) + ' m';
 const airPick = a => a[Math.floor(Math.random() * a.length)];
 function airKey(e){ const t = e.target && e.target.tagName; if(t === 'INPUT') return;
@@ -1698,7 +1698,7 @@ function airStep(dt){ const g = ARC.g; if(!g || g.over) return; g.t += dt;
   else if(g.phase === 'fly'){ const h = dt * AIR.SLOW; g.puff = Math.max(0, g.puff - dt);
     g.parts.forEach(q => { q.t -= dt; q.x += q.vx * dt * .5; q.y += q.vy * dt * .5; }); g.parts = g.parts.filter(q => q.t > 0);
     g.vy -= AIR.G * h; g.x -= g.vx * h; g.y += g.vy * h;
-    if(!g.ghosts.length || Math.abs(g.ghosts[g.ghosts.length-1].x - g.x) > .35) g.ghosts.push({ x:g.x, y:g.y });
+    if(!g.ghosts.length || Math.abs(g.ghosts[g.ghosts.length-1].x - g.x) > .3) g.ghosts.push({ x:g.x, y:g.y });
     if(g.ghosts.length > 6) g.ghosts.shift();
     if(g.x <= 0){ g.x = 0;
       if(g.y >= AIR.LO && g.y <= AIR.HI) airEnd(true, g.d >= AIR.FT ? 'I BELIEVE I CAN FLY' : '¡MATE!');
