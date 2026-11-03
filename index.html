@@ -1435,7 +1435,7 @@ const ARC = { game:'triples' };
 // Juegos del arcade: nombre, instrucciones y formato de la puntuación
 const ARCG = {
   triples: { name:"3 'N BRICK", icon:'🕹️', how:'Toca cuando la marca esté en la zona verde, antes de que se acabe la posesión. Tres piedras y a la calle. Cada canasta acelera el tiro y el reloj.', fmt: v => Number(v).toLocaleString('es-ES') },
-  air: { name:'AIR', icon:'✈️', how:'Tres toques por intento: velocidad de carrera, punto de despegue y ángulo de vuelo. Cuanto más lejos del aro despegues y aun así machaques, mejor. La línea de tiros libres (4,6 m) es la zona Jordan. Tres intentos, cuenta el mejor.', fmt: v => (Number(v) / 100).toLocaleString('es-ES', { minimumFractionDigits:2, maximumFractionDigits:2 }) + ' m' }
+  air: { name:'AIR', icon:'✈️', how:'Toca para fijar la velocidad, toca para despegar y toca para elegir el ángulo. En el aire, mantén pulsado para planear mientras te quede AIR. El mate solo entra si llegas con las manos justo por encima del aro: corto, al hierro; alto, al tablero. Cuanto más lejos despegues, mejor: la línea de tiros libres (4,6 m) es la zona Jordan. Tres intentos, cuenta el mejor.', fmt: v => (Number(v) / 100).toLocaleString('es-ES', { minimumFractionDigits:2, maximumFractionDigits:2 }) + ' m' }
 };
 const arcFmt = (v, g) => ARCG[g || ARC.game].fmt(v);
 async function arcLoad(){
@@ -1512,7 +1512,7 @@ function arcClose(silent){
 function arcMuted(){ try{ return !!localStorage.getItem('arcMute'); }catch(e){ return false; } }
 function arcBeep(f, d, type){ if(arcMuted()) return; try{ const A = ARC.ac || (ARC.ac = new (window.AudioContext || window.webkitAudioContext)()); const o = A.createOscillator(), g = A.createGain();
   o.type = type || 'square'; o.frequency.value = f; g.gain.value = .06; o.connect(g); g.connect(A.destination); o.start(); g.gain.exponentialRampToValueAtTime(.0001, A.currentTime + d); o.stop(A.currentTime + d); }catch(e){} }
-function arcStop(){ if(ARC.raf) cancelAnimationFrame(ARC.raf); ARC.raf = null; document.removeEventListener('keydown', arcKey); document.removeEventListener('keydown', airKey); }
+function arcStop(){ if(ARC.raf) cancelAnimationFrame(ARC.raf); ARC.raf = null; document.removeEventListener('keydown', arcKey); document.removeEventListener('keydown', airKey); document.removeEventListener('keyup', airKeyUp); }
 function arcKey(e){ if(e.code === 'Space' || e.code === 'Enter'){ if(ARC.g && !ARC.g.over){ e.preventDefault(); arcShoot(); } } }
 function arcStart(){
   arcStop();
@@ -1641,104 +1641,147 @@ async function arcGameOver(){ const g = ARC.g, ov = $('#arcOver'); if(!ov) retur
 }
 
 // ---------- Arcade: AIR (mate desde lo más lejos posible) ----------
-// Tres toques por intento: velocidad (barra), despegue (distancia al aro) y ángulo (aguja en cámara lenta).
-const AIR = { F:192, PX:26, RIM:293, START:8.5, FT:4.6, G:9.8 };
-const airX = d => AIR.RIM - d * AIR.PX;           // metros al aro -> x en el canvas
-const airY = h => AIR.F - h * AIR.PX;              // altura en metros -> y en el canvas
+// Por intento: velocidad (toque), despegue (toque), ángulo (toque) y, ya en el aire, mantener pulsado para planear.
+// El mate solo entra si llegas con las manos justo por encima del aro: corto pega en el hierro, alto escupe en el tablero.
+const AIR = { F:192, PX:26, RIM:293, START:8.5, FT:4.6, G:9.8, SLOW:.42, GLIDE:.35, FUEL:.35, LO:3.05, HI:3.7 };
+const airX = d => AIR.RIM - d * AIR.PX;
+const airY = h => AIR.F - h * AIR.PX;
 const airM = v => v.toLocaleString('es-ES', { minimumFractionDigits:2, maximumFractionDigits:2 }) + ' m';
-function airKey(e){ if(e.code === 'Space' || e.code === 'Enter'){ const t = e.target && e.target.tagName; if(t === 'INPUT') return; e.preventDefault(); airTap(); } }
+const airPick = a => a[Math.floor(Math.random() * a.length)];
+function airKey(e){ const t = e.target && e.target.tagName; if(t === 'INPUT') return;
+  if(e.code === 'Space' || e.code === 'Enter'){ e.preventDefault(); if(e.type === 'keydown'){ if(!e.repeat) airTap(); ARC.g && (ARC.g.hold = true); } } }
+function airKeyUp(e){ if((e.code === 'Space' || e.code === 'Enter') && ARC.g) ARC.g.hold = false; }
 function airStart(){
   arcStop();
   const cv = $('#arc'); if(!cv) return;
   ARC.cx = cv.getContext('2d');
-  ARC.g = { score:0, over:false, attempt:1, best:0, results:[] };
+  ARC.g = { score:0, over:false, attempt:1, best:0, results:[], hold:false };
   airNewAttempt();
-  cv.onpointerdown = e => { e.preventDefault(); airTap(); };
-  document.addEventListener('keydown', airKey);
+  cv.onpointerdown = e => { e.preventDefault(); airTap(); ARC.g.hold = true; };
+  cv.onpointerup = cv.onpointercancel = cv.onpointerleave = () => { if(ARC.g) ARC.g.hold = false; };
+  document.addEventListener('keydown', airKey); document.addEventListener('keyup', airKeyUp);
   $('#arcOver').style.display = 'none';
   let last = performance.now();
   const loop = now => { if(!$('#arcModal') || !$('#arc')){ arcStop(); return; } const dt = Math.min(50, now - last) / 1000; last = now; airStep(dt); airDraw(); ARC.raf = requestAnimationFrame(loop); };
   ARC.raf = requestAnimationFrame(loop);
 }
-function airNewAttempt(){ const g = ARC.g; Object.assign(g, { phase:'speed', t:0, bar:0, s:0, d:AIR.START, run:0, ang:0, theta:0, u:0, ft:0, fx:AIR.START, fy:2.5, msg:null, ok:false, trail:[] }); }
+function airNewAttempt(){ const g = ARC.g;
+  Object.assign(g, { phase:'speed', t:0, bar:0, s:0, d:AIR.START, run:0, ang:0, theta:0, x:AIR.START, y:2.5, vx:0, vy:0, fuel:1, gliding:false,
+    msg:null, ok:false, ghosts:[], shake:0, flash:0, bend:0, ball:null, parts:[], hang:false, sweat:0 }); }
 function airTap(){ const g = ARC.g; if(!g || g.over) return;
   if(g.phase === 'speed'){ g.s = g.bar; g.phase = 'run'; arcBeep(330 + g.s * 400, .08); }
   else if(g.phase === 'run'){ if(g.d < .8) return; g.phase = 'angle'; g.t = 0; arcBeep(520, .06); }
-  else if(g.phase === 'angle'){ g.theta = g.ang; g.u = 5 + 3.2 * g.s; g.phase = 'fly'; g.ft = 0; g.fx = g.d; g.fy = 2.5; arcBeep(700, .1, 'triangle'); }
+  else if(g.phase === 'angle'){ g.theta = g.ang; const u = 5 + 3.2 * g.s, th = g.theta * Math.PI / 180;
+    Object.assign(g, { phase:'fly', x:g.d, y:2.5, vx:u * Math.cos(th), vy:u * Math.sin(th), t:0 }); arcBeep(700, .1, 'triangle'); }
 }
-function airEnd(ok, msg){ const g = ARC.g; g.phase = 'result'; g.ok = ok; g.msg = msg; g.t = 0;
-  if(ok){ const sc = Math.round(g.d * 100); g.results.push(sc); if(sc > g.best) g.best = sc; arcBeep(880, .12, 'triangle'); setTimeout(() => arcBeep(1175, .18, 'triangle'), 110); }
-  else { g.results.push(0); arcBeep(140, .25, 'sawtooth'); }
+function airBall(x, y, vx, vy){ ARC.g.ball = { x, y, vx, vy, b:0 }; }
+function airEnd(ok, msg, kind){ const g = ARC.g; g.phase = 'result'; g.ok = ok; g.msg = msg; g.t = 0; g.gliding = false;
+  if(ok){ const sc = Math.round(g.d * 100); g.results.push(sc); if(sc > g.best) g.best = sc;
+    g.shake = .45; g.flash = .12; g.bend = .35; g.hang = true; airBall(0, 2.95, 0, -1.5);
+    for(let i = 0; i < 26; i++) g.parts.push({ x:0, y:3.05, vx:(Math.random() - .5) * 6, vy:Math.random() * 5 + 1, c:airPick(['#f8b538','#fff','#c8102e','#2fbf6b']), t:1.2 });
+    arcBeep(110, .25, 'square'); setTimeout(() => arcBeep(880, .12, 'triangle'), 60); setTimeout(() => arcBeep(1175, .2, 'triangle'), 170); }
+  else { g.results.push(0); arcBeep(140, .25, 'sawtooth');
+    if(kind === 'rim'){ g.shake = .2; airBall(0, 3.1, 2.2, 3.2); }
+    else if(kind === 'board'){ g.shake = .15; airBall(-.25, g.y, 2.6, -1); }
+    else airBall(g.x, Math.max(g.y, 2.5), -1, 1); }
 }
 function airStep(dt){ const g = ARC.g; if(!g || g.over) return; g.t += dt;
-  if(g.phase === 'speed'){ const x = (g.t / .9) % 2; g.bar = x < 1 ? x : 2 - x; }
+  g.shake = Math.max(0, g.shake - dt); g.flash = Math.max(0, g.flash - dt); g.bend = Math.max(0, g.bend - dt);
+  if(g.phase === 'speed'){ const x = (g.t / .85) % 2; g.bar = x < 1 ? x : 2 - x; }
   else if(g.phase === 'run'){ g.run += dt; g.d -= (3 + 5 * g.s) * dt; if(g.d <= .5){ g.d = .5; airEnd(false, airPick(['¡TE COMES EL ARO!','¡NI DESPEGAS!'])); } }
-  else if(g.phase === 'angle'){ const x = (g.t / 1.05) % 2, k = x < 1 ? x : 2 - x; g.ang = 12 + k * 70; }
-  else if(g.phase === 'fly'){ g.ft += dt * .6; const th = g.theta * Math.PI / 180, vx = g.u * Math.cos(th), vy = g.u * Math.sin(th);
-    g.fx = g.d - vx * g.ft; g.fy = 2.5 + vy * g.ft - AIR.G * g.ft * g.ft / 2;
-    if(g.trail.length === 0 || Math.abs(g.trail[g.trail.length-1][0] - g.fx) > .12) g.trail.push([g.fx, g.fy]);
-    if(g.fx <= 0){ g.fx = 0;
-      if(g.fy >= 3.05 && g.fy <= 4.3) airEnd(true, g.d >= AIR.FT ? 'I BELIEVE I CAN FLY' : '¡MATE!');
-      else if(g.fy > 4.3) airEnd(false, '¡POR ENCIMA DEL TABLERO!');
-      else airEnd(false, airPick(['¡CORTO! HAS BESADO EL ARO','¡CONTRA EL HIERRO!'])); }
-    else if(g.fy < 2.5 && vy - AIR.G * g.ft < 0) airEnd(false, airPick(['¡CORTO! ATERRIZAS EN LA PINTURA','¡TE HAS QUEDADO EN EL AIRE… Y EN EL SUELO!']));
+  else if(g.phase === 'angle'){ const x = (g.t / 1.4) % 2, k = x < 1 ? x : 2 - x; g.ang = 12 + k * 70; }
+  else if(g.phase === 'fly'){ const h = dt * AIR.SLOW;
+    g.gliding = g.hold && g.fuel > 0 && g.vy < 0;
+    const gr = AIR.G * (g.gliding ? AIR.GLIDE : 1); if(g.gliding) g.fuel = Math.max(0, g.fuel - h / AIR.FUEL);
+    g.vy -= gr * h; g.x -= g.vx * h; g.y += g.vy * h;
+    if(!g.ghosts.length || Math.abs(g.ghosts[g.ghosts.length-1].x - g.x) > .35) g.ghosts.push({ x:g.x, y:g.y });
+    if(g.ghosts.length > 6) g.ghosts.shift();
+    if(g.x <= 0){ g.x = 0;
+      if(g.y >= AIR.LO && g.y <= AIR.HI) airEnd(true, g.d >= AIR.FT ? 'I BELIEVE I CAN FLY' : '¡MATE!');
+      else if(g.y > AIR.HI) airEnd(false, airPick(['¡TE PASAS! ESCUPE EL TABLERO','¡DEMASIADO ALTO! AL TABLERO']), 'board');
+      else airEnd(false, airPick(['¡CORTO! HAS BESADO EL ARO','¡CONTRA EL HIERRO!']), 'rim'); }
+    else if(g.y < 2.5 && g.vy < 0) airEnd(false, airPick(['¡CORTO! ATERRIZAS EN LA PINTURA','TE FALTÓ AIRE']), 'short');
   }
-  else if(g.phase === 'result' && g.t > 1.5){
-    if(g.attempt >= 3){ g.over = true; g.score = g.best; arcGameOver(); }
-    else { g.attempt++; airNewAttempt(); }
+  else if(g.phase === 'result'){
+    if(g.ball){ const B = g.ball; B.vy -= AIR.G * dt * .8; B.x -= B.vx * dt * .8; B.y += B.vy * dt * .8;
+      if(B.y <= .12){ B.y = .12; B.vy = -B.vy * .55; B.vx *= .8; if(Math.abs(B.vy) > .6) arcBeep(90 + B.b * 20, .05); B.b++; } }
+    g.parts.forEach(q => { q.t -= dt; q.vy -= 9 * dt; q.x += q.vx * dt * .5; q.y += q.vy * dt * .5; }); g.parts = g.parts.filter(q => q.t > 0);
+    if(g.hang && g.t > .7) g.hang = false;
+    if(g.t > 2.2){ if(g.attempt >= 3){ g.over = true; g.score = g.best; arcGameOver(); } else { g.attempt++; airNewAttempt(); } }
   }
 }
-const airPick = a => a[Math.floor(Math.random() * a.length)];
-function airDraw(){ const c = ARC.cx, g = ARC.g, W = 320, H = 220; if(!c || !g) return;
-  const R = (x, y, w, h, col) => { c.fillStyle = col; c.fillRect(Math.round(x), Math.round(y), w, h); };
-  R(0, 0, W, H, '#0b0d12');
-  for(let y = 30; y < 120; y += 8) for(let x = (y / 8) % 2 ? 4 : 0; x < W; x += 9) R(x, y, 5, 4, (x * 7 + y * 3) % 5 ? '#1a2030' : '#232b3f');
-  R(0, AIR.F, W, H - AIR.F, '#7a4a22'); for(let x = 0; x < W; x += 16) R(x, AIR.F, 2, H - AIR.F, '#6b3f1c'); R(0, AIR.F, W, 2, '#f1e3c8');
-  // zona Jordan (línea de tiros libres)
-  const fx = airX(AIR.FT); for(let y = AIR.F + 3; y < H; y += 6) R(fx, y, 2, 3, '#f1e3c8');
-  c.fillStyle = '#f1e3c8'; c.font = 'bold 8px ui-monospace,Menlo,monospace'; c.textAlign = 'center'; c.fillText('ZONA JORDAN 4,6 m', fx, H - 4); c.textAlign = 'left';
-  // canasta
-  R(310, airY(3.6), 4, AIR.F - airY(3.6), '#9aa2b1'); R(303, airY(3.95), 3, 34, '#e8ecf3'); R(284, airY(3.05), 20, 3, '#e5533b');
-  for(let i = 0; i < 5; i++) R(286 + i * 4, airY(3.05) + 3, 1, 9, '#e8ecf3');
-  // trayectoria
-  g.trail.forEach(([x, y]) => R(airX(x) - 1, airY(y) - 1, 2, 2, 'rgba(255,255,255,.35)'));
-  // jugador: la posición de las manos es (px, hy)
-  const flying = g.phase === 'fly' || (g.phase === 'result' && g.fx < g.d - .01);
-  const pd = flying ? g.fx : g.d, px = airX(pd), hy = flying ? airY(g.fy) : airY(2.5), foot = flying ? hy + 62 : AIR.F;
-  const step = Math.floor(g.run * 10) % 2;
-  const red = '#c8102e', skin = '#8d5524';
-  if(flying){
-    R(px - 10, foot - 14, 6, 10, skin); R(px - 2, foot - 16, 6, 10, skin); R(px - 11, foot - 6, 8, 4, '#fff'); R(px - 3, foot - 8, 8, 4, '#fff');
+function airPlayer(c, R, px, hy, mode, step, alpha, noBall){
+  const red = '#c8102e', skin = '#8d5524'; c.globalAlpha = alpha || 1;
+  if(mode === 'fly'){ const foot = hy + 62;
+    R(px - 12, foot - 14, 6, 10, skin); R(px - 2, foot - 18, 6, 10, skin); R(px - 13, foot - 6, 8, 4, '#fff'); R(px - 3, foot - 10, 8, 4, '#fff');
     R(px - 10, foot - 26, 16, 12, red); R(px - 10, foot - 26, 16, 2, '#111');
     R(px - 11, foot - 46, 18, 22, red); R(px - 11, foot - 46, 2, 22, '#fff'); R(px + 5, foot - 46, 2, 22, '#fff');
-    R(px - 7, foot - 56, 10, 10, skin); R(px - 1, hy, 4, foot - 46 - hy, skin); R(px - 1, hy - 7, 8, 8, '#e8772e');
-  } else {
-    const lx = step ? 3 : -3;
+    R(px - 7, foot - 56, 10, 10, skin); R(px - 1, hy, 4, foot - 46 - hy, skin);
+    R(px - 16, foot - 44, 6, 3, skin);                                 // brazo libre extendido
+  } else if(mode === 'hang'){ const top = hy;
+    R(px - 1, top, 4, 12, skin); R(px - 7, top + 10, 10, 10, skin);
+    R(px - 9, top + 20, 18, 22, red); R(px - 9, top + 20, 2, 22, '#fff'); R(px + 7, top + 20, 2, 22, '#fff');
+    R(px - 8, top + 42, 16, 12, red); R(px - 6, top + 54, 5, 14, skin); R(px + 1, top + 54, 5, 14, skin); R(px - 7, top + 66, 7, 3, '#fff'); R(px + 1, top + 66, 7, 3, '#fff');
+  } else { const foot = AIR.F, lx = step ? 3 : -3;
     R(px - 6 + lx, foot - 18, 5, 18, skin); R(px + 1 - lx, foot - 18, 5, 18, skin); R(px - 7 + lx, foot - 3, 8, 3, '#fff'); R(px - lx, foot - 3, 8, 3, '#fff');
     R(px - 8, foot - 30, 16, 12, red); R(px - 8, foot - 30, 16, 2, '#111');
     R(px - 9, foot - 50, 18, 22, red); R(px - 9, foot - 50, 2, 22, '#fff'); R(px + 7, foot - 50, 2, 22, '#fff');
-    R(px - 5, foot - 60, 10, 10, skin); R(px + 8, foot - 42, 4, 12, skin); R(px + 9, foot - 36, 8, 8, '#e8772e');
-  }
+    R(px - 5, foot - 60, 10, 10, skin); R(px + 8, foot - 42, 4, 12, skin); if(!noBall) R(px + 9, foot - 36, 8, 8, '#e8772e'); }
+  c.globalAlpha = 1;
+}
+function airDraw(){ const c = ARC.cx, g = ARC.g, W = 320, H = 220; if(!c || !g) return;
+  c.save(); if(g.shake > 0){ const a = g.shake * 12; c.translate((Math.random() - .5) * a, (Math.random() - .5) * a); }
+  const R = (x, y, w, h, col) => { c.fillStyle = col; c.fillRect(Math.round(x), Math.round(y), w, h); };
+  R(-10, -10, W + 20, H + 20, '#0b0d12');
+  const flying = g.phase === 'fly', big = flying && g.d >= AIR.FT;
+  for(let y = 30; y < 120; y += 8) for(let x = (y / 8) % 2 ? 4 : 0; x < W; x += 9){
+    const flashOn = (big || (g.phase === 'result' && g.ok && g.t < 1.2)) && Math.random() < .03;
+    R(x, y, 5, 4, flashOn ? '#ffffff' : (x * 7 + y * 3) % 5 ? '#1a2030' : '#232b3f'); }
+  R(-10, AIR.F, W + 20, H - AIR.F + 10, '#7a4a22'); for(let x = 0; x < W; x += 16) R(x, AIR.F, 2, H - AIR.F, '#6b3f1c'); R(-10, AIR.F, W + 20, 2, '#f1e3c8');
+  const fx = airX(AIR.FT); for(let y = AIR.F + 3; y < H; y += 6) R(fx, y, 2, 3, '#f1e3c8');
+  c.fillStyle = '#f1e3c8'; c.font = 'bold 8px ui-monospace,Menlo,monospace'; c.textAlign = 'center'; c.fillText('ZONA JORDAN 4,6 m', fx, H - 4); c.textAlign = 'left';
+  // líneas de velocidad en la carrera
+  if(g.phase === 'run' && g.s > .55) for(let i = 0; i < 6; i++){ const yy = 130 + ((i * 37 + Math.floor(g.run * 60)) % 55); R(((i * 53 + g.run * 900) % W), yy, 14 + g.s * 16, 1, 'rgba(255,255,255,.25)'); }
+  // canasta (el aro se dobla con el mate)
+  const rimY = airY(3.05) + (g.bend > 0 ? Math.round(g.bend * 10) : 0);
+  R(310, airY(3.6), 4, AIR.F - airY(3.6), '#9aa2b1'); R(303, airY(3.95), 3, 34, '#e8ecf3'); R(284, rimY, 20, 3, '#e5533b');
+  const stretch = g.ball && g.ok && g.ball.y > 2.4 && g.ball.y < 3.05 ? 6 : 0;
+  for(let i = 0; i < 5; i++) R(286 + i * 4, rimY + 3, 1, 9 + stretch, '#e8ecf3');
+  // sombra en el suelo: más pequeña cuanto más alto vuelas
+  const inAir = flying || (g.phase === 'result' && !g.ok && g.x < g.d - .01);
+  const pd = inAir ? g.x : g.phase === 'result' && g.ok ? (g.hang ? 0 : .35) : g.d;
+  const altura = flying ? g.y - 2.5 : 0, sw = Math.max(6, 22 - altura * 6);
+  c.fillStyle = 'rgba(0,0,0,.35)'; c.beginPath(); c.ellipse(airX(pd), AIR.F + 2, sw, 3, 0, 0, Math.PI * 2); c.fill();
+  // fantasmas de la estela y jugador
+  if(flying) g.ghosts.forEach((q, i) => airPlayer(c, R, airX(q.x), airY(q.y), 'fly', 0, .08 + i * .04));
+  if(inAir) airPlayer(c, R, airX(g.x), airY(Math.max(g.y, 2.5)), 'fly');
+  else if(g.phase === 'result' && g.ok && g.hang) airPlayer(c, R, airX(0) - 2, rimY, 'hang');
+  else if(g.phase === 'result' && g.ok) airPlayer(c, R, airX(.35), 0, 'run', 0, 1, true);
+  else airPlayer(c, R, airX(g.d), 0, 'run', Math.floor(g.run * 10) % 2);
+  if(flying){ R(airX(g.x) - 1, airY(g.y) - 7, 8, 8, '#e8772e'); if(g.gliding) for(let i = 0; i < 3; i++) R(airX(g.x) + 10 + i * 6, airY(g.y) + 18 + i * 7, 8, 1, 'rgba(255,255,255,.6)'); }
+  if(g.ball){ R(airX(g.ball.x) - 4, airY(g.ball.y) - 4, 8, 8, '#e8772e'); R(airX(g.ball.x) - 4, airY(g.ball.y), 8, 1, '#7a3a12'); }
+  g.parts.forEach(q => R(airX(q.x), airY(q.y), 3, 3, q.c));
+  c.restore();
+  if(g.flash > 0){ c.fillStyle = `rgba(255,255,255,${g.flash * 5})`; c.fillRect(0, 0, W, H); }
   // HUD
-  c.font = 'bold 10px ui-monospace,Menlo,monospace'; c.fillStyle = '#fff';
-  c.fillText('INTENTO ' + Math.min(g.attempt, 3) + '/3', 8, 14);
+  c.font = 'bold 10px ui-monospace,Menlo,monospace'; c.fillStyle = '#fff'; c.fillText('INTENTO ' + Math.min(g.attempt, 3) + '/3', 8, 14);
   c.fillStyle = '#9aa2b1'; c.fillText('MEJOR ' + (g.best ? airM(g.best / 100) : '—'), 8, 26);
   const rec = ARC.record; c.textAlign = 'right'; c.fillText('REC ' + (rec ? airM(rec.score / 100) + ' ' + tag3(rec) : '—'), W - 8, 14); c.textAlign = 'left';
-  const hint = (t) => { c.fillStyle = '#fff'; c.font = 'bold 10px ui-monospace,Menlo,monospace'; c.textAlign = 'center'; c.fillText(t, W / 2, 46); c.textAlign = 'left'; };
+  const hint = t => { c.fillStyle = '#fff'; c.font = 'bold 10px ui-monospace,Menlo,monospace'; c.textAlign = 'center'; c.fillText(t, W / 2, 46); c.textAlign = 'left'; };
   if(g.phase === 'speed'){ hint('TOCA: VELOCIDAD');
-    R(60, 56, 200, 10, '#232b3f'); const grd = c.createLinearGradient(60, 0, 260, 0); grd.addColorStop(0, '#3a4256'); grd.addColorStop(.75, '#f8b538'); grd.addColorStop(1, '#2fbf6b'); c.fillStyle = grd; c.fillRect(60, 56, 200, 10);
+    const grd = c.createLinearGradient(60, 0, 260, 0); grd.addColorStop(0, '#3a4256'); grd.addColorStop(.75, '#f8b538'); grd.addColorStop(1, '#2fbf6b'); c.fillStyle = grd; c.fillRect(60, 56, 200, 10);
     R(60 + g.bar * 197, 52, 3, 18, '#fff'); }
   else if(g.phase === 'run'){ hint('TOCA: ¡DESPEGA!'); c.font = 'bold 20px ui-monospace,Menlo,monospace'; c.fillStyle = g.d >= AIR.FT ? '#2fbf6b' : '#fff'; c.textAlign = 'center'; c.fillText(airM(Math.max(g.d, 0)), W / 2, 72); c.textAlign = 'left'; }
-  else if(g.phase === 'angle'){ hint('TOCA: ÁNGULO');
+  else if(g.phase === 'angle'){ hint('TOCA: ÁNGULO · Y MANTÉN PARA VOLAR'); const px = airX(g.d), hy = airY(2.5);
     c.strokeStyle = 'rgba(255,255,255,.25)'; c.lineWidth = 2; c.beginPath(); c.arc(px, hy, 30, -Math.PI / 2, 0); c.stroke();
-    c.strokeStyle = 'rgba(47,191,107,.7)'; c.beginPath(); c.arc(px, hy, 30, -50 * Math.PI / 180, -38 * Math.PI / 180); c.stroke();
     const a = g.ang * Math.PI / 180; c.strokeStyle = '#fff'; c.beginPath(); c.moveTo(px, hy); c.lineTo(px + Math.cos(a) * 34, hy - Math.sin(a) * 34); c.stroke();
     c.font = 'bold 10px ui-monospace,Menlo,monospace'; c.fillStyle = '#fff'; c.fillText(Math.round(g.ang) + '°', px + 34, hy - 30); }
+  else if(g.phase === 'fly'){ hint(g.fuel > 0 ? (g.vy < 0 ? 'MANTÉN PULSADO: ¡VUELA!' : '…') : 'SIN AIRE');
+    c.fillStyle = '#9aa2b1'; c.font = 'bold 8px ui-monospace,Menlo,monospace'; c.fillText('AIR', 110, 63); R(130, 57, 80, 6, '#232b3f'); R(130, 57, 80 * g.fuel, 6, g.gliding ? '#2fbf6b' : '#f8b538'); }
   else if(g.phase === 'result'){
     c.textAlign = 'center'; c.font = 'bold 15px ui-monospace,Menlo,monospace'; c.fillStyle = g.ok ? (g.d >= AIR.FT ? '#f8b538' : '#2fbf6b') : '#ff6b5a';
     c.fillText(g.msg, W / 2, 66); if(g.ok){ c.font = 'bold 12px ui-monospace,Menlo,monospace'; c.fillStyle = '#fff'; c.fillText('DESDE ' + airM(g.d), W / 2, 82); } c.textAlign = 'left'; }
 }
-
 function renderView(){
   ({ perfil:viewProfile, reglas:viewRules, comi:viewComm, arcade:viewArcade, notis:viewNotis, jornada:viewJornada, hemeroteca:viewHemeroteca })[S.view]();
 }
