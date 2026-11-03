@@ -1432,9 +1432,16 @@ async function openLink(k){
 function closeView(){ const back = S.view === 'arcade' ? 'pred' : null; arcClose(true); arcStop(); S.view = null; if(back) S.tab = back; render(); }
 // ---------- Arcade: «Piedras desde el triple» ----------
 const ARC = { game:'triples' };
+// Juegos del arcade: nombre, instrucciones y formato de la puntuación
+const ARCG = {
+  triples: { name:"3 'N BRICK", icon:'🕹️', how:'Toca cuando la marca esté en la zona verde, antes de que se acabe la posesión. Tres piedras y a la calle. Cada canasta acelera el tiro y el reloj.', fmt: v => Number(v).toLocaleString('es-ES') },
+  air: { name:'AIR', icon:'✈️', how:'Tres toques por intento: velocidad de carrera, punto de despegue y ángulo de vuelo. Cuanto más lejos del aro despegues y aun así machaques, mejor. La línea de tiros libres (4,6 m) es la zona Jordan. Tres intentos, cuenta el mejor.', fmt: v => (Number(v) / 100).toLocaleString('es-ES', { minimumFractionDigits:2, maximumFractionDigits:2 }) + ' m' }
+};
+const arcFmt = (v, g) => ARCG[g || ARC.game].fmt(v);
 async function arcLoad(){
-  const { data } = await sb.from('arcade_scores').select('id,user_id,score,initials,created_at').eq('league_id', S.league.id).eq('game', ARC.game).order('score', { ascending:false }).range(0, 199);
-  const rows = data || [];
+  const { data:all } = await sb.from('arcade_scores').select('id,user_id,score,initials,created_at,game').eq('league_id', S.league.id).order('score', { ascending:false }).range(0, 499);
+  ARC.recs = {}; (all || []).forEach(r => { if(!ARC.recs[r.game]) ARC.recs[r.game] = r; });
+  const rows = (all || []).filter(r => r.game === ARC.game);
   const best = {}; rows.forEach(r => { if(!best[r.user_id] || r.score > best[r.user_id].score) best[r.user_id] = r; });
   const now = new Date(), ym = now.toLocaleDateString('sv-SE', { timeZone:'Europe/Madrid' }).slice(0,7);
   const month = rows.filter(r => new Date(r.created_at).toLocaleDateString('sv-SE', { timeZone:'Europe/Madrid' }).slice(0,7) === ym);
@@ -1446,27 +1453,28 @@ async function arcLoad(){
 }
 const tag3 = r => r.initials || (member(r.user_id).team || '???').replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]/g,'').slice(0,3).toUpperCase();
 function arcadeCard(){
-  if(!ARC.top) return '';
-  return `<div class="card between" style="border-style:dashed"><div><div class="name">🕹️ 3 'N BRICK · arcade</div>
-    <div class="small muted">${ARC.record ? `Récord de la liga: <b style="color:var(--text)">${ARC.record.score.toLocaleString('es-ES')}</b> · ${esc(tag3(ARC.record))}` : 'Nadie ha jugado todavía. El primer récord es tuyo.'}</div></div>
-    <button class="sm" onclick="openView('arcade')">Jugar</button></div>`;
+  if(!ARC.recs) return '';
+  return Object.keys(ARCG).map(g => { const r = ARC.recs[g], G = ARCG[g];
+    return `<div class="card between" style="border-style:dashed"><div><div class="name">${G.icon} ${G.name} · arcade${g === 'air' && !r ? ' <span class="pill accent">Nuevo</span>' : ''}</div>
+    <div class="small muted">${r ? `Récord de la liga: <b style="color:var(--text)">${arcFmt(r.score, g)}</b> · ${esc(tag3(r))}` : 'Nadie ha jugado todavía. El primer récord es tuyo.'}</div></div>
+    <button class="sm" onclick="ARC.game='${g}';openView('arcade')">Jugar</button></div>`; }).join('');
 }
 async function viewArcade(){
   $('#tab').innerHTML = '<p class="muted" style="margin-top:14px">Cargando…</p>';
   await arcLoad(); if(S.view !== 'arcade') return;
   $('#tab').innerHTML = `
     <p style="margin-top:14px"><a href="#" onclick="arcStop();closeView();return false">← Volver a Challenge</a></p>
-    <h1 style="margin-bottom:2px;font-family:ui-monospace,Menlo,monospace;letter-spacing:.04em">3 'N BRICK</h1>
-    <p class="small muted" style="margin-top:0">Toca cuando la marca esté en la zona verde, antes de que se acabe la posesión. Tres piedras y a la calle. Cada canasta acelera el tiro y el reloj.</p>
+    <h1 style="margin-bottom:2px;font-family:ui-monospace,Menlo,monospace;letter-spacing:.04em">${ARCG[ARC.game].name}</h1>
+    <p class="small muted" style="margin-top:0">${ARCG[ARC.game].how}</p>
     <button style="width:100%;font-size:18px;padding:14px" onclick="arcOpen()">▶ Jugar</button>
-    <p class="small muted" style="margin:8px 0 0">Tu récord: <b style="color:var(--text)">${ARC.mine.toLocaleString('es-ES')}</b></p>
+    <p class="small muted" style="margin:8px 0 0">Tu récord: <b style="color:var(--text)">${ARC.mine ? arcFmt(ARC.mine) : '—'}</b></p>
     <h2>Arcade del mes · ${ARC.monthName}</h2>
-    <div class="card small">${ARC.king ? `👑 <b>${esc(tag3(ARC.king))}</b> · ${esc(member(ARC.king.user_id).team)} · <b>${ARC.king.score.toLocaleString('es-ES')}</b>` : 'Este mes nadie ha jugado todavía.'}
-      <p class="muted" style="margin:6px 0 0">Premio honorífico al mejor récord del mes. No suma puntos en la liga.</p></div>
+    <div class="card small">${ARC.king ? `👑 <b>${esc(tag3(ARC.king))}</b> · ${esc(member(ARC.king.user_id).team)} · <b>${arcFmt(ARC.king.score)}</b>` : 'Este mes nadie ha jugado todavía.'}
+      <p class="muted" style="margin:6px 0 0">${ARC.game === 'triples' ? 'Premio honorífico al mejor récord del mes. No suma puntos en la liga.' : 'Gloria eterna, de momento. No suma puntos en la liga.'}</p></div>
     <h2>Récords de la liga</h2>
     <div class="card" style="padding:4px 14px"><ul class="list">${(ARC.top || []).map((r,i) => `<li><span class="pill">${i+1}</span>
       <b style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.1em;min-width:44px">${esc(tag3(r))}</b>
-      <div class="grow"><div class="small muted">${esc(member(r.user_id).team)}</div></div><span class="price">${r.score.toLocaleString('es-ES')}</span></li>`).join('') || '<li class="muted">Sin partidas aún.</li>'}</ul></div>`;
+      <div class="grow"><div class="small muted">${esc(member(r.user_id).team)}</div></div><span class="price">${arcFmt(r.score)}</span></li>`).join('') || '<li class="muted">Sin partidas aún.</li>'}</ul></div>`;
 }
 // La partida se juega en una capa fija a pantalla completa: sin scroll y sin el resto de contenido
 function arcOpen(){
@@ -1474,19 +1482,20 @@ function arcOpen(){
   const m = document.createElement('div'); m.id = 'arcModal'; m.className = 'arcm';
   m.innerHTML = `<button class="arcx" onclick="arcClose()" aria-label="Cerrar">✕</button>
     <div class="arcbox">
-      <div style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.04em;font-weight:800;font-size:22px;margin-bottom:8px">3 'N BRICK</div>
+      <div style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.04em;font-weight:800;font-size:22px;margin-bottom:8px">${ARCG[ARC.game].name}</div>
       <div style="position:relative">
         <canvas id="arc" width="320" height="220" style="width:100%;image-rendering:pixelated;border-radius:12px;border:1px solid var(--line);background:#0b0d12;touch-action:none;display:block"></canvas>
         <div id="arcOver" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(10,12,16,.82);border-radius:12px"></div>
       </div>
-      <div class="between" style="margin-top:10px"><span class="small muted">Tu récord: <b id="arcMine" style="color:var(--text)">${ARC.mine.toLocaleString('es-ES')}</b></span>
+      <div class="between" style="margin-top:10px"><span class="small muted">Tu récord: <b id="arcMine" style="color:var(--text)">${ARC.mine ? arcFmt(ARC.mine) : '—'}</b></span>
         <button class="ghost sm" id="arcSnd">${arcMuted() ? '🔇 Sonido' : '🔊 Sonido'}</button></div>
     </div>`;
   document.body.appendChild(m); document.documentElement.classList.add('arclock');
   $('#arcSnd').onclick = () => { try{ localStorage.setItem('arcMute', arcMuted() ? '' : '1'); }catch(e){} $('#arcSnd').textContent = arcMuted() ? '🔇 Sonido' : '🔊 Sonido'; };
   document.addEventListener('keydown', arcEsc);
-  arcStart();
+  arcRestart();
 }
+const arcRestart = () => ARC.game === 'air' ? airStart() : arcStart();
 function arcEsc(e){ if(e.key === 'Escape' && !(e.target && e.target.tagName === 'INPUT')) arcClose(); }
 function arcClose(silent){
   const m = $('#arcModal'); if(!m) return;
@@ -1496,7 +1505,7 @@ function arcClose(silent){
 function arcMuted(){ try{ return !!localStorage.getItem('arcMute'); }catch(e){ return false; } }
 function arcBeep(f, d, type){ if(arcMuted()) return; try{ const A = ARC.ac || (ARC.ac = new (window.AudioContext || window.webkitAudioContext)()); const o = A.createOscillator(), g = A.createGain();
   o.type = type || 'square'; o.frequency.value = f; g.gain.value = .06; o.connect(g); g.connect(A.destination); o.start(); g.gain.exponentialRampToValueAtTime(.0001, A.currentTime + d); o.stop(A.currentTime + d); }catch(e){} }
-function arcStop(){ if(ARC.raf) cancelAnimationFrame(ARC.raf); ARC.raf = null; document.removeEventListener('keydown', arcKey); }
+function arcStop(){ if(ARC.raf) cancelAnimationFrame(ARC.raf); ARC.raf = null; document.removeEventListener('keydown', arcKey); document.removeEventListener('keydown', airKey); }
 function arcKey(e){ if(e.code === 'Space' || e.code === 'Enter'){ if(ARC.g && !ARC.g.over){ e.preventDefault(); arcShoot(); } } }
 function arcStart(){
   arcStop();
@@ -1600,13 +1609,13 @@ async function arcGameOver(){ const g = ARC.g, ov = $('#arcOver'); if(!ov) retur
   ov.style.display = 'flex';
   ov.innerHTML = '<p class="muted">Guardando…</p>';
   const { data, error } = await sb.rpc('arcade_submit', { p_league:S.league.id, p_score:g.score, p_game:ARC.game });
-  if(error){ ov.innerHTML = `<div style="text-align:center"><p>No se pudo guardar la partida.</p><button onclick="arcStart()">Otra</button></div>`; return; }
+  if(error){ ov.innerHTML = `<div style="text-align:center"><p>No se pudo guardar la partida.</p><button onclick="arcRestart()">Otra</button></div>`; return; }
   const diff = prevMine - g.score;
   const line = data.league_record ? '<b style="color:var(--accent)">¡NUEVO RÉCORD DE LA LIGA!</b>' : data.personal_best ? '<b style="color:var(--ok)">¡Nuevo récord personal!</b>' :
-    diff <= 15 ? `Te has quedado a <b>${diff}</b> de tu récord. Una más.` : `Tu récord: ${prevMine.toLocaleString('es-ES')}`;
+    (ARC.game === 'air' ? diff <= 30 : diff <= 15) ? `Te has quedado a <b>${ARC.game === 'air' ? arcFmt(diff) : diff}</b> de tu récord. Una más.` : prevMine ? `Tu récord: ${arcFmt(prevMine)}` : '';
   ov.innerHTML = `<div style="text-align:center;padding:12px;width:100%">
     <div style="font:700 13px ui-monospace,Menlo,monospace;letter-spacing:.2em;color:var(--muted)">GAME OVER</div>
-    <div style="font:800 40px ui-monospace,Menlo,monospace;margin:4px 0">${g.score.toLocaleString('es-ES')}</div>
+    <div style="font:800 40px ui-monospace,Menlo,monospace;margin:4px 0">${ARC.game === 'air' && !g.score ? 'SIN MATE' : arcFmt(g.score)}</div>
     <div class="small" style="margin-bottom:10px">${line}</div>
     ${data.league_record ? `<form id="arcIni" style="display:flex;gap:8px;justify-content:center;align-items:center;margin-bottom:10px">
       <input id="arcI" maxlength="3" autocomplete="off" autocapitalize="characters" placeholder="AAA" style="width:96px;text-align:center;font:700 22px ui-monospace,Menlo,monospace;letter-spacing:.3em;text-transform:uppercase;margin:0">
@@ -1620,8 +1629,107 @@ async function arcGameOver(){ const g = ARC.g, ov = $('#arcOver'); if(!ov) retur
   }
   if(data.personal_best) ARC.mine = g.score;
   if(data.league_record) ARC.record = { score:g.score, user_id:S.user.id, initials:null };
-  const m = $('#arcMine'); if(m) m.textContent = ARC.mine.toLocaleString('es-ES');
-  $('#arcAgain').onclick = () => arcStart();
+  const m = $('#arcMine'); if(m) m.textContent = ARC.mine ? arcFmt(ARC.mine) : '—';
+  $('#arcAgain').onclick = () => arcRestart();
+}
+
+// ---------- Arcade: AIR (mate desde lo más lejos posible) ----------
+// Tres toques por intento: velocidad (barra), despegue (distancia al aro) y ángulo (aguja en cámara lenta).
+const AIR = { F:192, PX:26, RIM:293, START:8.5, FT:4.6, G:9.8 };
+const airX = d => AIR.RIM - d * AIR.PX;           // metros al aro -> x en el canvas
+const airY = h => AIR.F - h * AIR.PX;              // altura en metros -> y en el canvas
+const airM = v => v.toLocaleString('es-ES', { minimumFractionDigits:2, maximumFractionDigits:2 }) + ' m';
+function airKey(e){ if(e.code === 'Space' || e.code === 'Enter'){ const t = e.target && e.target.tagName; if(t === 'INPUT') return; e.preventDefault(); airTap(); } }
+function airStart(){
+  arcStop();
+  const cv = $('#arc'); if(!cv) return;
+  ARC.cx = cv.getContext('2d');
+  ARC.g = { score:0, over:false, attempt:1, best:0, results:[] };
+  airNewAttempt();
+  cv.onpointerdown = e => { e.preventDefault(); airTap(); };
+  document.addEventListener('keydown', airKey);
+  $('#arcOver').style.display = 'none';
+  let last = performance.now();
+  const loop = now => { if(!$('#arcModal') || !$('#arc')){ arcStop(); return; } const dt = Math.min(50, now - last) / 1000; last = now; airStep(dt); airDraw(); ARC.raf = requestAnimationFrame(loop); };
+  ARC.raf = requestAnimationFrame(loop);
+}
+function airNewAttempt(){ const g = ARC.g; Object.assign(g, { phase:'speed', t:0, bar:0, s:0, d:AIR.START, run:0, ang:0, theta:0, u:0, ft:0, fx:AIR.START, fy:2.5, msg:null, ok:false, trail:[] }); }
+function airTap(){ const g = ARC.g; if(!g || g.over) return;
+  if(g.phase === 'speed'){ g.s = g.bar; g.phase = 'run'; arcBeep(330 + g.s * 400, .08); }
+  else if(g.phase === 'run'){ if(g.d < .8) return; g.phase = 'angle'; g.t = 0; arcBeep(520, .06); }
+  else if(g.phase === 'angle'){ g.theta = g.ang; g.u = 5 + 3.2 * g.s; g.phase = 'fly'; g.ft = 0; g.fx = g.d; g.fy = 2.5; arcBeep(700, .1, 'triangle'); }
+}
+function airEnd(ok, msg){ const g = ARC.g; g.phase = 'result'; g.ok = ok; g.msg = msg; g.t = 0;
+  if(ok){ const sc = Math.round(g.d * 100); g.results.push(sc); if(sc > g.best) g.best = sc; arcBeep(880, .12, 'triangle'); setTimeout(() => arcBeep(1175, .18, 'triangle'), 110); }
+  else { g.results.push(0); arcBeep(140, .25, 'sawtooth'); }
+}
+function airStep(dt){ const g = ARC.g; if(!g || g.over) return; g.t += dt;
+  if(g.phase === 'speed'){ const x = (g.t / .9) % 2; g.bar = x < 1 ? x : 2 - x; }
+  else if(g.phase === 'run'){ g.run += dt; g.d -= (3 + 5 * g.s) * dt; if(g.d <= .5){ g.d = .5; airEnd(false, airPick(['¡TE COMES EL ARO!','¡NI DESPEGAS!'])); } }
+  else if(g.phase === 'angle'){ const x = (g.t / 1.05) % 2, k = x < 1 ? x : 2 - x; g.ang = 12 + k * 70; }
+  else if(g.phase === 'fly'){ g.ft += dt * .6; const th = g.theta * Math.PI / 180, vx = g.u * Math.cos(th), vy = g.u * Math.sin(th);
+    g.fx = g.d - vx * g.ft; g.fy = 2.5 + vy * g.ft - AIR.G * g.ft * g.ft / 2;
+    if(g.trail.length === 0 || Math.abs(g.trail[g.trail.length-1][0] - g.fx) > .12) g.trail.push([g.fx, g.fy]);
+    if(g.fx <= 0){ g.fx = 0;
+      if(g.fy >= 3.05 && g.fy <= 4.3) airEnd(true, g.d >= AIR.FT ? 'I BELIEVE I CAN FLY' : '¡MATE!');
+      else if(g.fy > 4.3) airEnd(false, '¡POR ENCIMA DEL TABLERO!');
+      else airEnd(false, airPick(['¡CORTO! HAS BESADO EL ARO','¡CONTRA EL HIERRO!'])); }
+    else if(g.fy < 2.5 && vy - AIR.G * g.ft < 0) airEnd(false, airPick(['¡CORTO! ATERRIZAS EN LA PINTURA','¡TE HAS QUEDADO EN EL AIRE… Y EN EL SUELO!']));
+  }
+  else if(g.phase === 'result' && g.t > 1.5){
+    if(g.attempt >= 3){ g.over = true; g.score = g.best; arcGameOver(); }
+    else { g.attempt++; airNewAttempt(); }
+  }
+}
+const airPick = a => a[Math.floor(Math.random() * a.length)];
+function airDraw(){ const c = ARC.cx, g = ARC.g, W = 320, H = 220; if(!c || !g) return;
+  const R = (x, y, w, h, col) => { c.fillStyle = col; c.fillRect(Math.round(x), Math.round(y), w, h); };
+  R(0, 0, W, H, '#0b0d12');
+  for(let y = 30; y < 120; y += 8) for(let x = (y / 8) % 2 ? 4 : 0; x < W; x += 9) R(x, y, 5, 4, (x * 7 + y * 3) % 5 ? '#1a2030' : '#232b3f');
+  R(0, AIR.F, W, H - AIR.F, '#7a4a22'); for(let x = 0; x < W; x += 16) R(x, AIR.F, 2, H - AIR.F, '#6b3f1c'); R(0, AIR.F, W, 2, '#f1e3c8');
+  // zona Jordan (línea de tiros libres)
+  const fx = airX(AIR.FT); for(let y = AIR.F + 3; y < H; y += 6) R(fx, y, 2, 3, '#f1e3c8');
+  c.fillStyle = '#f1e3c8'; c.font = 'bold 8px ui-monospace,Menlo,monospace'; c.textAlign = 'center'; c.fillText('ZONA JORDAN 4,6 m', fx, H - 4); c.textAlign = 'left';
+  // canasta
+  R(310, airY(3.6), 4, AIR.F - airY(3.6), '#9aa2b1'); R(303, airY(3.95), 3, 34, '#e8ecf3'); R(284, airY(3.05), 20, 3, '#e5533b');
+  for(let i = 0; i < 5; i++) R(286 + i * 4, airY(3.05) + 3, 1, 9, '#e8ecf3');
+  // trayectoria
+  g.trail.forEach(([x, y]) => R(airX(x) - 1, airY(y) - 1, 2, 2, 'rgba(255,255,255,.35)'));
+  // jugador: la posición de las manos es (px, hy)
+  const flying = g.phase === 'fly' || (g.phase === 'result' && g.fx < g.d - .01);
+  const pd = flying ? g.fx : g.d, px = airX(pd), hy = flying ? airY(g.fy) : airY(2.5), foot = flying ? hy + 62 : AIR.F;
+  const step = Math.floor(g.run * 10) % 2;
+  const red = '#c8102e', skin = '#8d5524';
+  if(flying){
+    R(px - 10, foot - 14, 6, 10, skin); R(px - 2, foot - 16, 6, 10, skin); R(px - 11, foot - 6, 8, 4, '#fff'); R(px - 3, foot - 8, 8, 4, '#fff');
+    R(px - 10, foot - 26, 16, 12, red); R(px - 10, foot - 26, 16, 2, '#111');
+    R(px - 11, foot - 46, 18, 22, red); R(px - 11, foot - 46, 2, 22, '#fff'); R(px + 5, foot - 46, 2, 22, '#fff');
+    R(px - 7, foot - 56, 10, 10, skin); R(px - 1, hy, 4, foot - 46 - hy, skin); R(px - 1, hy - 7, 8, 8, '#e8772e');
+  } else {
+    const lx = step ? 3 : -3;
+    R(px - 6 + lx, foot - 18, 5, 18, skin); R(px + 1 - lx, foot - 18, 5, 18, skin); R(px - 7 + lx, foot - 3, 8, 3, '#fff'); R(px - lx, foot - 3, 8, 3, '#fff');
+    R(px - 8, foot - 30, 16, 12, red); R(px - 8, foot - 30, 16, 2, '#111');
+    R(px - 9, foot - 50, 18, 22, red); R(px - 9, foot - 50, 2, 22, '#fff'); R(px + 7, foot - 50, 2, 22, '#fff');
+    R(px - 5, foot - 60, 10, 10, skin); R(px + 8, foot - 42, 4, 12, skin); R(px + 9, foot - 36, 8, 8, '#e8772e');
+  }
+  // HUD
+  c.font = 'bold 10px ui-monospace,Menlo,monospace'; c.fillStyle = '#fff';
+  c.fillText('INTENTO ' + Math.min(g.attempt, 3) + '/3', 8, 14);
+  c.fillStyle = '#9aa2b1'; c.fillText('MEJOR ' + (g.best ? airM(g.best / 100) : '—'), 8, 26);
+  const rec = ARC.record; c.textAlign = 'right'; c.fillText('REC ' + (rec ? airM(rec.score / 100) + ' ' + tag3(rec) : '—'), W - 8, 14); c.textAlign = 'left';
+  const hint = (t) => { c.fillStyle = '#fff'; c.font = 'bold 10px ui-monospace,Menlo,monospace'; c.textAlign = 'center'; c.fillText(t, W / 2, 46); c.textAlign = 'left'; };
+  if(g.phase === 'speed'){ hint('TOCA: VELOCIDAD');
+    R(60, 56, 200, 10, '#232b3f'); const grd = c.createLinearGradient(60, 0, 260, 0); grd.addColorStop(0, '#3a4256'); grd.addColorStop(.75, '#f8b538'); grd.addColorStop(1, '#2fbf6b'); c.fillStyle = grd; c.fillRect(60, 56, 200, 10);
+    R(60 + g.bar * 197, 52, 3, 18, '#fff'); }
+  else if(g.phase === 'run'){ hint('TOCA: ¡DESPEGA!'); c.font = 'bold 20px ui-monospace,Menlo,monospace'; c.fillStyle = g.d >= AIR.FT ? '#2fbf6b' : '#fff'; c.textAlign = 'center'; c.fillText(airM(Math.max(g.d, 0)), W / 2, 72); c.textAlign = 'left'; }
+  else if(g.phase === 'angle'){ hint('TOCA: ÁNGULO');
+    c.strokeStyle = 'rgba(255,255,255,.25)'; c.lineWidth = 2; c.beginPath(); c.arc(px, hy, 30, -Math.PI / 2, 0); c.stroke();
+    c.strokeStyle = 'rgba(47,191,107,.7)'; c.beginPath(); c.arc(px, hy, 30, -50 * Math.PI / 180, -38 * Math.PI / 180); c.stroke();
+    const a = g.ang * Math.PI / 180; c.strokeStyle = '#fff'; c.beginPath(); c.moveTo(px, hy); c.lineTo(px + Math.cos(a) * 34, hy - Math.sin(a) * 34); c.stroke();
+    c.font = 'bold 10px ui-monospace,Menlo,monospace'; c.fillStyle = '#fff'; c.fillText(Math.round(g.ang) + '°', px + 34, hy - 30); }
+  else if(g.phase === 'result'){
+    c.textAlign = 'center'; c.font = 'bold 15px ui-monospace,Menlo,monospace'; c.fillStyle = g.ok ? (g.d >= AIR.FT ? '#f8b538' : '#2fbf6b') : '#ff6b5a';
+    c.fillText(g.msg, W / 2, 66); if(g.ok){ c.font = 'bold 12px ui-monospace,Menlo,monospace'; c.fillStyle = '#fff'; c.fillText('DESDE ' + airM(g.d), W / 2, 82); } c.textAlign = 'left'; }
 }
 
 function renderView(){
@@ -1854,7 +1962,8 @@ function postHTML(p){
   if(p.kind === 'room_open') txt = `<b>${(d.users||[]).map(team).join(' y ')}</b> se pelean por <b>${pname(d.player)}</b>. Mesa de negociación abierta.`;
   else if(p.kind === 'deal') txt = `<b>Acuerdo alcanzado:</b> ${team(d.keeper)} se queda a <b>${pname(d.player)}</b>.`;
   else if(p.kind === 'frozen') txt = `<b>Negociación rota:</b> ${pname(d.player)} queda congelado y ${+d.week >= 3 ? 'paga 1M quien lo pidió primero y 3M el segundo' : 'cada implicado paga 3M'}.`;
-  else if(p.kind === 'arcade') txt = `🕹️ <b>${esc(d.initials)}</b> (${team(p.user_id)}) bate el récord del arcade: <b>${Number(d.score).toLocaleString('es-ES')}</b>${d.prev_score ? ` · adiós al ${Number(d.prev_score).toLocaleString('es-ES')} de ${d.prev_initials ? esc(d.prev_initials) : team(d.prev_user)}` : ''}.`;
+  else if(p.kind === 'arcade'){ const gm = ARCG[d.game || 'triples'] || ARCG.triples, f = v => gm.fmt(v);
+    txt = `${gm.icon} <b>${esc(d.initials)}</b> (${team(p.user_id)}) bate el récord de ${gm.name}: <b>${f(d.score)}</b>${d.prev_score ? ` · adiós al ${f(d.prev_score)} de ${d.prev_initials ? esc(d.prev_initials) : team(d.prev_user)}` : ''}.`; }
   else if(p.kind === 'signing') txt = `<b>Fichaje:</b> ${team(d.user)} incorpora a <b>${pname(d.player)}</b> y suelta a ${pname(d.out)}.`;
   else if(p.kind === 'trade_offer') txt = `🔁 <b>${team(d.from)}</b> hace una oferta a <b>${team(d.to)}</b> por <b>${pname(d.player)}</b>.${[d.from,d.to].includes(S.user.id) ? ` <a href="#" onclick="openTrade('${d.thread}');return false">Ver</a>` : ''}`;
   else if(p.kind === 'trade_rejected') txt = `❌ <b>${team(d.to)}</b> rechaza la oferta de <b>${team(d.from)}</b>: ${pname(d.give)} por ${pname(d.get)}${d.amount ? ` + ${d.amount}M que ponía ${team(d.payer)}` : ''}.`;
