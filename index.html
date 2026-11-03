@@ -1066,7 +1066,7 @@ function challengesCard(){
     ['🏆','Copa NBA','Bracket antes de cuartos','⚡ Segundo capitán + hasta 2M','Diciembre'],
     ['⭐','All-Star Weekend','Febrero','🛡️ Banquillo al 50 % una jornada + hasta 3M','Febrero'],
     ['🔮','Pedradas de temporada','Junio','Ventaja para el draft de la temporada siguiente','Junio'],
-    ['🕹️','3 \'N BRICK','Rey del mes','🏅 Mención','Activo']];
+    ['🕹️','Arcade del mes','Fin de mes · suma todos los juegos (3 \'N BRICK y AIR)','🏅 Mención','Activo']];
   return `<h2>Challenges</h2><div class="card" style="padding:4px 14px"><ul class="list">${rows.map(r => `<li><span style="font-size:20px">${r[0]}</span><div class="grow"><div class="name">${r[1]}</div><div class="small muted">${r[2]} · ${r[3]}</div></div><span class="pill ${r[4]==='Activo'?'ok':''}">${r[4]}</span></li>`).join('')}</ul>
     <p class="small muted" style="margin:6px 0 10px">Nada de esto suma puntos de liga: la liga se decide por jornadas. Los challenges dan ventajas para gastar durante la temporada.</p></div>`;
 }
