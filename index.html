@@ -109,6 +109,10 @@ table.h2h .h2v{font-weight:700;font-size:15px;color:var(--text)} table.h2h .h2t 
 table.h2h b.up{color:var(--ok)} table.h2h b.down{color:var(--bad)}
 .fcard{border-color:var(--accent);background:linear-gradient(160deg,rgba(242,140,40,.16),var(--surface) 60%)}
 .chron{border-color:#3a3f4b}
+html.arclock,html.arclock body{overflow:hidden;overscroll-behavior:none;touch-action:none}
+.arcm{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;padding:16px;touch-action:none;overscroll-behavior:none}
+.arcbox{width:100%;max-width:520px}
+.arcx{position:absolute;top:calc(12px + env(safe-area-inset-top));right:12px;width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.12);color:#fff;font-size:20px;padding:0;line-height:44px;text-align:center}
 .ment{color:var(--accent);font-weight:600}
 .ment.me{background:rgba(242,140,40,.18);border-radius:6px;padding:0 4px}
 .mchips{display:flex;gap:6px;margin:0 0 8px}
@@ -1425,7 +1429,7 @@ async function openLink(k){
   if(k !== 'chronicle') return goTab(k);
   S.chronOpen = true; await goTab('hoy');
 }
-function closeView(){ const back = S.view === 'arcade' ? 'pred' : null; arcStop(); S.view = null; if(back) S.tab = back; render(); }
+function closeView(){ const back = S.view === 'arcade' ? 'pred' : null; arcClose(true); arcStop(); S.view = null; if(back) S.tab = back; render(); }
 // ---------- Arcade: «Piedras desde el triple» ----------
 const ARC = { game:'triples' };
 async function arcLoad(){
@@ -1454,12 +1458,8 @@ async function viewArcade(){
     <p style="margin-top:14px"><a href="#" onclick="arcStop();closeView();return false">← Volver a Challenge</a></p>
     <h1 style="margin-bottom:2px;font-family:ui-monospace,Menlo,monospace;letter-spacing:.04em">3 'N BRICK</h1>
     <p class="small muted" style="margin-top:0">Toca cuando la marca esté en la zona verde, antes de que se acabe la posesión. Tres piedras y a la calle. Cada canasta acelera el tiro y el reloj.</p>
-    <div style="position:relative">
-      <canvas id="arc" width="320" height="220" style="width:100%;image-rendering:pixelated;border-radius:12px;border:1px solid var(--line);background:#0b0d12;touch-action:manipulation;display:block"></canvas>
-      <div id="arcOver" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(10,12,16,.82);border-radius:12px"></div>
-    </div>
-    <div class="between" style="margin-top:8px"><span class="small muted">Tu récord: <b id="arcMine" style="color:var(--text)">${ARC.mine.toLocaleString('es-ES')}</b></span>
-      <button class="ghost sm" id="arcSnd">${arcMuted() ? '🔇 Sonido' : '🔊 Sonido'}</button></div>
+    <button style="width:100%;font-size:18px;padding:14px" onclick="arcOpen()">▶ Jugar</button>
+    <p class="small muted" style="margin:8px 0 0">Tu récord: <b style="color:var(--text)">${ARC.mine.toLocaleString('es-ES')}</b></p>
     <h2>Arcade del mes · ${ARC.monthName}</h2>
     <div class="card small">${ARC.king ? `👑 <b>${esc(tag3(ARC.king))}</b> · ${esc(member(ARC.king.user_id).team)} · <b>${ARC.king.score.toLocaleString('es-ES')}</b>` : 'Este mes nadie ha jugado todavía.'}
       <p class="muted" style="margin:6px 0 0">Premio honorífico al mejor récord del mes. No suma puntos en la liga.</p></div>
@@ -1467,8 +1467,31 @@ async function viewArcade(){
     <div class="card" style="padding:4px 14px"><ul class="list">${(ARC.top || []).map((r,i) => `<li><span class="pill">${i+1}</span>
       <b style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.1em;min-width:44px">${esc(tag3(r))}</b>
       <div class="grow"><div class="small muted">${esc(member(r.user_id).team)}</div></div><span class="price">${r.score.toLocaleString('es-ES')}</span></li>`).join('') || '<li class="muted">Sin partidas aún.</li>'}</ul></div>`;
+}
+// La partida se juega en una capa fija a pantalla completa: sin scroll y sin el resto de contenido
+function arcOpen(){
+  arcClose(true);
+  const m = document.createElement('div'); m.id = 'arcModal'; m.className = 'arcm';
+  m.innerHTML = `<button class="arcx" onclick="arcClose()" aria-label="Cerrar">✕</button>
+    <div class="arcbox">
+      <div style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.04em;font-weight:800;font-size:22px;margin-bottom:8px">3 'N BRICK</div>
+      <div style="position:relative">
+        <canvas id="arc" width="320" height="220" style="width:100%;image-rendering:pixelated;border-radius:12px;border:1px solid var(--line);background:#0b0d12;touch-action:none;display:block"></canvas>
+        <div id="arcOver" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(10,12,16,.82);border-radius:12px"></div>
+      </div>
+      <div class="between" style="margin-top:10px"><span class="small muted">Tu récord: <b id="arcMine" style="color:var(--text)">${ARC.mine.toLocaleString('es-ES')}</b></span>
+        <button class="ghost sm" id="arcSnd">${arcMuted() ? '🔇 Sonido' : '🔊 Sonido'}</button></div>
+    </div>`;
+  document.body.appendChild(m); document.documentElement.classList.add('arclock');
   $('#arcSnd').onclick = () => { try{ localStorage.setItem('arcMute', arcMuted() ? '' : '1'); }catch(e){} $('#arcSnd').textContent = arcMuted() ? '🔇 Sonido' : '🔊 Sonido'; };
+  document.addEventListener('keydown', arcEsc);
   arcStart();
+}
+function arcEsc(e){ if(e.key === 'Escape' && !(e.target && e.target.tagName === 'INPUT')) arcClose(); }
+function arcClose(silent){
+  const m = $('#arcModal'); if(!m) return;
+  arcStop(); m.remove(); document.documentElement.classList.remove('arclock'); document.removeEventListener('keydown', arcEsc);
+  if(!silent && S.view === 'arcade') viewArcade();
 }
 function arcMuted(){ try{ return !!localStorage.getItem('arcMute'); }catch(e){ return false; } }
 function arcBeep(f, d, type){ if(arcMuted()) return; try{ const A = ARC.ac || (ARC.ac = new (window.AudioContext || window.webkitAudioContext)()); const o = A.createOscillator(), g = A.createGain();
@@ -1485,7 +1508,7 @@ function arcStart(){
   document.addEventListener('keydown', arcKey);
   $('#arcOver').style.display = 'none';
   let last = performance.now();
-  const loop = now => { if(S.view !== 'arcade' || !$('#arc')){ arcStop(); return; } const dt = Math.min(50, now - last) / 1000; last = now; arcStep(dt); arcDraw(); ARC.raf = requestAnimationFrame(loop); };
+  const loop = now => { if(!$('#arcModal') || !$('#arc')){ arcStop(); return; } const dt = Math.min(50, now - last) / 1000; last = now; arcStep(dt); arcDraw(); ARC.raf = requestAnimationFrame(loop); };
   ARC.raf = requestAnimationFrame(loop);
 }
 function arcNewShot(){ const g = ARC.g;
