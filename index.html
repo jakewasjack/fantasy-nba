@@ -1645,7 +1645,7 @@ async function arcGameOver(){ const g = ARC.g, ov = $('#arcOver'); if(!ov) retur
 // ---------- Arcade: AIR (mate desde lo más lejos posible) ----------
 // Por intento: velocidad (toque), despegue (toque), ángulo (toque) y, ya en el aire y cayendo, hasta dos toques de impulso.
 // El mate solo entra si llegas con las manos justo por encima del aro: corto pega en el hierro, alto escupe en el tablero.
-const AIR = { F:192, PX:38, PY:26, RIM:293, START:8.0, FT:4.6, G:9.8, SLOW:.34, KICK:.85, KICKS:2, LO:3.05, HI:3.7 };
+const AIR = { F:192, PX:34, PY:26, RIM:293, START:8.0, FT:4.6, G:9.8, SLOW:.34, KICK:.85, KICKS:2, LO:3.05, HI:3.7 };
 const airX = d => AIR.RIM - d * AIR.PX;
 const airY = h => AIR.F - h * AIR.PY;   // escala vertical real; la horizontal se estira para que el vuelo cruce la pantalla
 const airM = v => v.toLocaleString('es-ES', { minimumFractionDigits:2, maximumFractionDigits:2 }) + ' m';
