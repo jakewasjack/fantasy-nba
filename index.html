@@ -1823,7 +1823,7 @@ function airDraw(){ const c = ARC.cx, g = ARC.g, W = 320, H = 220; if(!c || !g) 
 }
 // ---------- DROP: máquina de 16 pads (homenaje a J Dilla) ----------
 // Todo el sonido se sintetiza en el navegador con Web Audio: sin samples de terceros.
-const DROP = { kit:'lofi', bpm:80, bars:2, feel:.5, ev:[], rec:false, playing:false, metro:true, ctx:null };
+const DROP = { kit:'lofi', bpm:80, bars:2, feel:0, ev:[], rec:false, playing:false, metro:true, ctx:null };
 const DKITS = {
   lofi: { name:'Lo-fi', bpm:80, cut:3200, drive:1.6, crackle:.035 },
   east: { name:'East Coast', bpm:92, cut:7500, drive:3.2, crackle:.012 },
@@ -1962,11 +1962,12 @@ function openDrop(){
     <div class="mpc-row" style="align-items:center;gap:10px">
       <button class="mpc-btn" id="dBm">−</button><span class="mpc-val" id="dBpm">${DROP.bpm} BPM</span><button class="mpc-btn" id="dBp">+</button>
       <span class="mpc-val" style="margin-left:auto">${DROP.bars} compases</span></div>
-    <label class="mpc-feel"><span>MPC</span><input type="range" id="dFeel" min="0" max="100" value="${Math.round(DROP.feel * 100)}"><span>DILLA</span></label>
+    <div class="mpc-row" style="align-items:center"><button class="mpc-btn ${DROP.feel === 0 ? 'on' : ''}" id="dSnap" style="flex:0 0 auto">${DROP.feel === 0 ? '⊞ AL COMPÁS' : '⊞ LIBRE'}</button>
+    <label class="mpc-feel" style="flex:1"><span>MPC</span><input type="range" id="dFeel" min="0" max="100" value="${Math.round(DROP.feel * 100)}"><span>DILLA</span></label></div>
     <div class="mpc-row"><input id="dCap" maxlength="200" placeholder="Suelta algo con tu beat… (opcional)"><button class="mpc-btn post" id="dPost">Soltar en el Trash Talk</button></div>
   </div></div>`;
   document.body.appendChild(m); document.documentElement.classList.add('droplock');
-  let lastT = 0; m.addEventListener('touchend', e => { const now = Date.now(); if(now - lastT < 350 && !(e.target.closest && e.target.closest('input'))) e.preventDefault(); lastT = now; }, { passive:false });
+  let lastT = 0; m.addEventListener('touchend', e => { const now = Date.now(); if(now - lastT < 350 && !(e.target.closest && e.target.closest('input, button'))) e.preventDefault(); lastT = now; }, { passive:false });
   m.addEventListener('dblclick', e => e.preventDefault());
   dropBind(); dropCtx();
 }
@@ -1984,7 +1985,9 @@ function dropBind(){
   $('#dMet').onclick = () => { DROP.metro = !DROP.metro; $('#dMet').textContent = DROP.metro ? 'CLICK ON' : 'CLICK OFF'; };
   $("#dBm").onclick = () => { DROP.bpm = Math.max(60, DROP.bpm - 2); $('#dBpm').textContent = DROP.bpm + ' BPM'; };
   $("#dBp").onclick = () => { DROP.bpm = Math.min(140, DROP.bpm + 2); $('#dBpm').textContent = DROP.bpm + ' BPM'; };
-  $('#dFeel').oninput = e => { DROP.feel = +e.target.value / 100; dLcd(DROP.feel > .85 ? 'Feel: puro Dilla' : DROP.feel < .15 ? 'Feel: cuantizado' : 'Feel: ' + Math.round(DROP.feel * 100) + ' %'); };
+  const snapUI = () => { const b = $('#dSnap'), f = $('#dFeel'); if(b){ b.classList.toggle('on', DROP.feel === 0); b.textContent = DROP.feel === 0 ? '⊞ AL COMPÁS' : '⊞ LIBRE'; } if(f) f.value = Math.round(DROP.feel * 100); };
+  $('#dSnap').onclick = () => { if(DROP.feel > 0){ DROP.lastFeel = DROP.feel; DROP.feel = 0; dLcd('Al compás: todo cuadra'); } else { DROP.feel = DROP.lastFeel || .5; dLcd('Libre: suena como lo tocas'); } snapUI(); };
+  $('#dFeel').oninput = e => { DROP.feel = +e.target.value / 100; snapUI(); dLcd(DROP.feel > .85 ? 'Feel: puro Dilla' : DROP.feel < .15 ? 'Feel: cuantizado' : 'Feel: ' + Math.round(DROP.feel * 100) + ' %'); };
   $('#dPost').onclick = dropPost;
 }
 async function dropPost(){
