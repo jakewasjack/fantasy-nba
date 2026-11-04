@@ -1961,7 +1961,7 @@ function openDrop(){
       <button class="mpc-btn" id="dClr">BORRAR</button><button class="mpc-btn" id="dMet">${DROP.metro ? 'CLICK ON' : 'CLICK OFF'}</button></div>
     <div class="mpc-row" style="align-items:center;gap:10px">
       <button class="mpc-btn" id="dBm">−</button><span class="mpc-val" id="dBpm">${DROP.bpm} BPM</span><button class="mpc-btn" id="dBp">+</button>
-      <span class="mpc-val" style="margin-left:auto">${DROP.bars} compases</span></div>
+      <span style="margin-left:auto;display:flex;gap:4px">${[1,2,4].map(n => `<button class="mpc-btn ${DROP.bars === n ? 'on' : ''}" data-bars="${n}" style="flex:0 0 auto">${n} ${n === 1 ? 'COMPÁS' : 'COMP.'}</button>`).join('')}</span></div>
     <div class="mpc-row" style="align-items:center"><button class="mpc-btn ${DROP.feel === 0 ? 'on' : ''}" id="dSnap" style="flex:0 0 auto">${DROP.feel === 0 ? '⊞ AL COMPÁS' : '⊞ LIBRE'}</button>
     <label class="mpc-feel" style="flex:1"><span>MPC</span><input type="range" id="dFeel" min="0" max="100" value="${Math.round(DROP.feel * 100)}"><span>DILLA</span></label></div>
     <div class="mpc-row"><input id="dCap" maxlength="200" placeholder="Suelta algo con tu beat… (opcional)"><button class="mpc-btn post" id="dPost">Soltar en el Trash Talk</button></div>
@@ -1983,6 +1983,13 @@ function dropBind(){
   $('#dRec').onclick = () => { DROP.rec = !DROP.rec; $('#dRec').classList.toggle('on', DROP.rec); if(DROP.rec && !DROP.playing){ dropPlay(DROP.ev); $('#dPlay').textContent = '■ STOP'; } dLcd(DROP.rec ? 'Grabando: toca los pads' : 'Grabación en pausa'); };
   $('#dClr').onclick = () => { DROP.ev = []; dLcd('Bucle vacío'); };
   $('#dMet').onclick = () => { DROP.metro = !DROP.metro; $('#dMet').textContent = DROP.metro ? 'CLICK ON' : 'CLICK OFF'; };
+  document.querySelectorAll('[data-bars]').forEach(b => b.onclick = () => { const n = +b.dataset.bars; if(n === DROP.bars) return;
+    // al acortar, lo que queda fuera del nuevo bucle se descarta; al alargar, lo grabado se repite para llenar los compases nuevos
+    const oldL = DROP.bars * 4, newL = n * 4;
+    if(newL < oldL) DROP.ev = DROP.ev.filter(e => e[0] < newL);
+    else { const base = DROP.ev.slice(); for(let k = 1; k < newL / oldL; k++) base.forEach(e => DROP.ev.push([Math.round((e[0] + k * oldL) * 1000) / 1000, e[1]])); }
+    DROP.bars = n; document.querySelectorAll('[data-bars]').forEach(x => x.classList.toggle('on', +x.dataset.bars === n));
+    dLcd(n + (n === 1 ? ' compás' : ' compases') + ' · 4/4'); if(DROP.playing) dropPlay(DROP.ev); });
   $("#dBm").onclick = () => { DROP.bpm = Math.max(60, DROP.bpm - 2); $('#dBpm').textContent = DROP.bpm + ' BPM'; };
   $("#dBp").onclick = () => { DROP.bpm = Math.min(140, DROP.bpm + 2); $('#dBpm').textContent = DROP.bpm + ' BPM'; };
   const snapUI = () => { const b = $('#dSnap'), f = $('#dFeel'); if(b){ b.classList.toggle('on', DROP.feel === 0); b.textContent = DROP.feel === 0 ? '⊞ AL COMPÁS' : '⊞ LIBRE'; } if(f) f.value = Math.round(DROP.feel * 100); };
