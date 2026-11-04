@@ -110,7 +110,19 @@ table.h2h b.up{color:var(--ok)} table.h2h b.down{color:var(--bad)}
 .fcard{border-color:var(--accent);background:linear-gradient(160deg,rgba(242,140,40,.16),var(--surface) 60%)}
 .chron{border-color:#3a3f4b}
 html.droplock,html.droplock body{overflow:hidden;overscroll-behavior:none}
-.arcm.drop{align-items:flex-start;padding-top:calc(64px + env(safe-area-inset-top));overflow-y:auto;touch-action:pan-x pan-y pinch-zoom}
+.arcm.drop{align-items:flex-start;padding:calc(8px + env(safe-area-inset-top)) 10px calc(8px + env(safe-area-inset-bottom));overflow-y:auto;touch-action:pan-x pan-y pinch-zoom;height:100vh;height:100dvh}
+.arcm.drop .arcbox{max-width:480px;margin:0 auto}
+.arcm.drop .mpc{padding:10px 12px}
+.arcm.drop .mpc-top{margin-bottom:6px;align-items:center}
+.arcm.drop .mpc-name{font-size:22px}
+.arcm.drop .mpc-lcd{min-width:0;flex:1;font-size:10px}
+.mpc-x{background:#3a3a3c;color:#eee;border-radius:50%;width:34px;height:34px;padding:0;flex:0 0 auto;font-size:15px}
+.arcm.drop .mpc-row{margin:6px 0;gap:5px}
+.arcm.drop .mpc-row.nowrap{flex-wrap:nowrap}
+.arcm.drop .mpc-btn{padding:8px 6px}
+.arcm.drop .mpc-btn.sq{flex:0 0 auto;min-width:34px}
+/* los pads se encogen para que el aparato entero quepa en la pantalla visible (descontando las barras de Safari) */
+.arcm.drop .mpc-pads{width:min(100%, calc(100vh - 330px));width:min(100%, calc(100dvh - 330px));margin:6px auto;gap:6px}
 .arcm.drop *{touch-action:manipulation}
 .arcm.drop .dpad{touch-action:none}
 .mpc{background:#c9c6bd;border-radius:16px;padding:14px;color:#1d1d1f;box-shadow:inset 0 -4px 0 rgba(0,0,0,.18)}
@@ -1951,20 +1963,21 @@ function dropStopSeq(){ DROP.playing = false; clearTimeout(DROP.timer); }
 function openDrop(){
   arcClose(true);
   const m = document.createElement('div'); m.id = 'arcModal'; m.className = 'arcm drop';
-  m.innerHTML = `<button class="arcx" onclick="dropClose()" aria-label="Cerrar">✕</button><div class="arcbox"><div class="mpc">
+  m.innerHTML = `<div class="arcbox"><div class="mpc">
     <div class="mpc-top"><div><div class="mpc-name">DROP</div><div class="mpc-sub">KWC for Dilla</div></div>
-      <div class="mpc-lcd"><div id="dLcd1">${DKITS[DROP.kit].name} · ${DROP.bpm} BPM</div><div id="dLcd2">Toca los pads</div></div></div>
+      <div class="mpc-lcd"><div id="dLcd1">${DKITS[DROP.kit].name} · ${DROP.bpm} BPM</div><div id="dLcd2">Toca los pads</div></div>
+      <button class="mpc-x" onclick="dropClose()" aria-label="Cerrar">✕</button></div>
     <div class="mpc-row">${Object.keys(DKITS).map(k => `<button class="mpc-btn ${k === DROP.kit ? 'on' : ''}" data-kit="${k}">${DKITS[k].name}</button>`).join('')}</div>
     <div class="mpc-pads">${[12,13,14,15,8,9,10,11,4,5,6,7,0,1,2,3].map(i => `<div class="dpad" data-i="${i}"><span>${DPADS[DROP.kit][i][0]}</span></div>`).join('')}</div>
     <div class="mpc-row">
       <button class="mpc-btn" id="dPlay">▶ PLAY</button><button class="mpc-btn rec ${DROP.rec ? 'on' : ''}" id="dRec">● REC</button>
       <button class="mpc-btn" id="dClr">BORRAR</button><button class="mpc-btn" id="dMet">${DROP.metro ? 'CLICK ON' : 'CLICK OFF'}</button></div>
-    <div class="mpc-row" style="align-items:center;gap:10px">
-      <button class="mpc-btn" id="dBm">−</button><span class="mpc-val" id="dBpm">${DROP.bpm} BPM</span><button class="mpc-btn" id="dBp">+</button>
-      <span style="margin-left:auto;display:flex;gap:4px">${[1,2,4].map(n => `<button class="mpc-btn ${DROP.bars === n ? 'on' : ''}" data-bars="${n}" style="flex:0 0 auto">${n} ${n === 1 ? 'COMPÁS' : 'COMP.'}</button>`).join('')}</span></div>
+    <div class="mpc-row nowrap" style="align-items:center">
+      <button class="mpc-btn sq" id="dBm">−</button><span class="mpc-val" id="dBpm">${DROP.bpm} BPM</span><button class="mpc-btn sq" id="dBp">+</button>
+      <span style="margin-left:auto;display:flex;gap:4px;align-items:center"><span class="mpc-val" style="opacity:.6">COMP.</span>${[1,2,4].map(n => `<button class="mpc-btn sq ${DROP.bars === n ? 'on' : ''}" data-bars="${n}">${n}</button>`).join('')}</span></div>
     <div class="mpc-row" style="align-items:center"><button class="mpc-btn ${DROP.feel === 0 ? 'on' : ''}" id="dSnap" style="flex:0 0 auto">${DROP.feel === 0 ? '⊞ AL COMPÁS' : '⊞ LIBRE'}</button>
     <label class="mpc-feel" style="flex:1"><span>MPC</span><input type="range" id="dFeel" min="0" max="100" value="${Math.round(DROP.feel * 100)}"><span>DILLA</span></label></div>
-    <div class="mpc-row"><input id="dCap" maxlength="200" placeholder="Suelta algo con tu beat… (opcional)"><button class="mpc-btn post" id="dPost">Soltar en el Trash Talk</button></div>
+    <div class="mpc-row nowrap"><input id="dCap" maxlength="200" placeholder="Comentario (opcional)"><button class="mpc-btn post" id="dPost">SOLTAR ↗</button></div>
   </div></div>`;
   document.body.appendChild(m); document.documentElement.classList.add('droplock');
   const vp = document.querySelector('meta[name=viewport]'); if(vp){ DROP.vp = vp.content; vp.content = 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover'; }
