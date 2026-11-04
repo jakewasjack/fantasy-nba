@@ -111,6 +111,8 @@ table.h2h b.up{color:var(--ok)} table.h2h b.down{color:var(--bad)}
 .chron{border-color:#3a3f4b}
 html.droplock,html.droplock body{overflow:hidden;overscroll-behavior:none}
 .arcm.drop{align-items:flex-start;padding-top:calc(64px + env(safe-area-inset-top));overflow-y:auto;touch-action:pan-y}
+.arcm.drop *{touch-action:manipulation}
+.arcm.drop .dpad{touch-action:none}
 .mpc{background:#c9c6bd;border-radius:16px;padding:14px;color:#1d1d1f;box-shadow:inset 0 -4px 0 rgba(0,0,0,.18)}
 .mpc-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px}
 .mpc-name{font:900 26px ui-monospace,Menlo,monospace;letter-spacing:.08em}
@@ -1964,11 +1966,14 @@ function openDrop(){
     <div class="mpc-row"><input id="dCap" maxlength="200" placeholder="Suelta algo con tu beat… (opcional)"><button class="mpc-btn post" id="dPost">Soltar en el Trash Talk</button></div>
   </div></div>`;
   document.body.appendChild(m); document.documentElement.classList.add('droplock');
+  let lastT = 0; m.addEventListener('touchend', e => { const now = Date.now(); if(now - lastT < 350 && !(e.target.closest && e.target.closest('input'))) e.preventDefault(); lastT = now; }, { passive:false });
+  m.addEventListener('dblclick', e => e.preventDefault());
   dropBind(); dropCtx();
 }
 function dropRedrawPads(){ document.querySelectorAll('.dpad').forEach(el => { el.querySelector('span').textContent = DPADS[DROP.kit][+el.dataset.i][0]; }); }
 function dropBind(){
-  document.querySelectorAll('.dpad').forEach(el => { el.onpointerdown = e => { e.preventDefault(); dropHit(+el.dataset.i, true); }; el.oncontextmenu = e => e.preventDefault(); });
+  document.querySelectorAll('.dpad').forEach(el => { el.onpointerdown = e => { e.preventDefault(); dropHit(+el.dataset.i, true); }; el.oncontextmenu = e => e.preventDefault();
+    el.addEventListener('touchstart', e => e.preventDefault(), { passive:false }); el.addEventListener('touchend', e => e.preventDefault(), { passive:false }); });
   document.querySelectorAll('[data-kit]').forEach(b => b.onclick = () => { DROP.kit = b.dataset.kit; DROP.bpm = DKITS[DROP.kit].bpm; dropCtx(); dropColor();
     document.querySelectorAll('[data-kit]').forEach(x => x.classList.toggle('on', x === b)); dropRedrawPads(); $('#dBpm').textContent = DROP.bpm + ' BPM';
     if(DROP.playing) dropPlay(DROP.ev); else $('#dLcd1').textContent = `${DKITS[DROP.kit].name} · ${DROP.bpm} BPM`; });
@@ -1989,16 +1994,22 @@ async function dropPost(){
   if(error) return fail(error);
   toast('Beat soltado en el Trash Talk'); const c = $('#dCap'); if(c) c.value = '';
 }
-function dropClose(){ dropStopSeq(); DROP.rec = false; arcClose(true); }
+function dropClose(){ dropStopSeq(); DROP.rec = false; arcClose(true); dropSleep(); }
+// Silencio total: para el bucle y duerme el audio (el crujido de vinilo incluido)
+function dropSleep(){ dropStopSeq(); DROP.rec = false; DROP.playingPost = null; document.querySelectorAll('[data-beat]').forEach(b => b.textContent = '▶ Escuchar');
+  const p = $('#dPlay'); if(p) p.textContent = '▶ PLAY'; const r = $('#dRec'); if(r) r.classList.remove('on');
+  try { if(DROP.ctx && DROP.ctx.state === 'running') DROP.ctx.suspend(); } catch(e){} }
+document.addEventListener('visibilitychange', () => { if(document.hidden) dropSleep(); });
+window.addEventListener('pagehide', () => dropSleep());
 // Escuchar un beat publicado en el muro (dos vueltas y para)
 function beatPlay(id){
   const p = (S.wallPosts || []).find(x => x.id === id); if(!p) return;
   const btn = document.querySelector(`[data-beat="${id}"]`);
-  if(DROP.playing && DROP.playingPost === id){ dropStopSeq(); DROP.playingPost = null; if(btn) btn.textContent = '▶ Escuchar'; return; }
+  if(DROP.playing && DROP.playingPost === id){ dropSleep(); return; }
   document.querySelectorAll('[data-beat]').forEach(b => b.textContent = '▶ Escuchar');
   const d = p.data || {}; Object.assign(DROP, { kit:d.kit || 'lofi', bpm:d.bpm || 90, bars:d.bars || 2, feel:d.feel ?? .5, rec:false });
   dropCtx(); dropColor(); DROP.playingPost = id; if(btn) btn.textContent = '■ Parar';
-  dropPlay(d.ev || [], { loops:2, lcd:false, done:() => { DROP.playingPost = null; if(btn) btn.textContent = '▶ Escuchar'; } });
+  dropPlay(d.ev || [], { loops:2, lcd:false, done:() => { DROP.playingPost = null; if(btn) btn.textContent = '▶ Escuchar'; setTimeout(() => { if(!DROP.playing && !$('#arcModal')) dropSleep(); }, 2500); } });
 }
 
 function renderView(){
