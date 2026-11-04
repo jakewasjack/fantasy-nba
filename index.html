@@ -109,6 +109,28 @@ table.h2h .h2v{font-weight:700;font-size:15px;color:var(--text)} table.h2h .h2t 
 table.h2h b.up{color:var(--ok)} table.h2h b.down{color:var(--bad)}
 .fcard{border-color:var(--accent);background:linear-gradient(160deg,rgba(242,140,40,.16),var(--surface) 60%)}
 .chron{border-color:#3a3f4b}
+html.droplock,html.droplock body{overflow:hidden;overscroll-behavior:none}
+.arcm.drop{align-items:flex-start;padding-top:calc(64px + env(safe-area-inset-top));overflow-y:auto;touch-action:pan-y}
+.mpc{background:#c9c6bd;border-radius:16px;padding:14px;color:#1d1d1f;box-shadow:inset 0 -4px 0 rgba(0,0,0,.18)}
+.mpc-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px}
+.mpc-name{font:900 26px ui-monospace,Menlo,monospace;letter-spacing:.08em}
+.mpc-sub{font-size:11px;opacity:.7}
+.mpc-lcd{background:#9fb48a;color:#203018;border-radius:6px;padding:6px 8px;font:700 11px ui-monospace,Menlo,monospace;min-width:150px;box-shadow:inset 0 2px 4px rgba(0,0,0,.35)}
+.mpc-row{display:flex;gap:6px;margin:8px 0;flex-wrap:wrap}
+.mpc-btn{background:#3a3a3c;color:#eee;border-radius:6px;padding:7px 10px;font:700 11px ui-monospace,Menlo,monospace;flex:1 1 auto;min-width:0}
+.mpc-btn.on{background:#e8772e;color:#1a1206}
+.mpc-btn.rec.on{background:#d64545;color:#fff}
+.mpc-btn.post{background:#1d1d1f;flex:0 0 auto}
+.mpc-val{font:700 12px ui-monospace,Menlo,monospace}
+.mpc-pads{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0}
+.dpad{aspect-ratio:1;background:#2b2b2e;border-radius:8px;display:flex;align-items:flex-end;justify-content:flex-start;padding:6px;box-shadow:inset 0 -3px 0 rgba(0,0,0,.45),0 1px 0 rgba(255,255,255,.4);touch-action:none;cursor:pointer;transition:background .06s}
+.dpad span{font:700 9px ui-monospace,Menlo,monospace;color:#9a9a9f}
+.dpad.hit{background:#e8772e}
+.dpad.hit span{color:#1a1206}
+.mpc-feel{display:flex;align-items:center;gap:8px;font:700 10px ui-monospace,Menlo,monospace}
+.mpc-feel input{flex:1;margin:0;accent-color:#e8772e}
+.mpc input#dCap{flex:1 1 140px;margin:0;background:#efede7;color:#1d1d1f;border-color:#b5b2a9}
+.beatpost{display:flex;gap:10px;align-items:center;margin-top:4px}
 html.arclock,html.arclock body{overflow:hidden;overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .arcm,.arcm *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 .arcm input{-webkit-user-select:text;user-select:text}
@@ -377,8 +399,8 @@ function myTeamInfo(uid = S.user.id){
 
 function render(){
   const done = S.league.draft_status === 'cerrado';
-  const tabs = done ? [['hoy','Hoy'],['equipo','Plantilla'],['mercado','Mercado'],['pred','Challenge'],['liga','Liga']]
-                    : [['draft','Draft'],['equipo','Plantilla'],['pred','Challenge'],['liga','Liga']];
+  const tabs = done ? [['hoy','Hoy'],['equipo','Plantilla'],['mercado','Mercado'],['pred','Playground'],['liga','Liga']]
+                    : [['draft','Draft'],['equipo','Plantilla'],['pred','Playground'],['liga','Liga']];
   if(!tabs.some(([k]) => k === S.tab)) S.tab = tabs[0][0];
   if(S.tab !== 'hoy') stopTick();
   if(S.tab !== 'mercado' || !S.room) stopRoomPoll();
@@ -1466,13 +1488,16 @@ function arcadeCard(){
   return Object.keys(ARCG).map(g => { const r = ARC.recs[g], G = ARCG[g];
     return `<div class="card between" style="border-style:dashed"><div><div class="name">${G.icon} ${G.name} · arcade${g === 'air' && !r ? ' <span class="pill accent">Nuevo</span>' : ''}</div>
     <div class="small muted">${r ? `Récord de la liga: <b style="color:var(--text)">${arcFmt(r.score, g)}</b> · ${esc(tag3(r))}` : 'Nadie ha jugado todavía. El primer récord es tuyo.'}</div></div>
-    <button class="sm" onclick="ARC.game='${g}';openView('arcade')">Jugar</button></div>`; }).join('');
+    <button class="sm" onclick="ARC.game='${g}';openView('arcade')">Jugar</button></div>`; }).join('')
+    + `<div class="card between" style="border-style:dashed"><div><div class="name">🎛️ DROP · máquina de beats <span class="pill accent">Nuevo</span></div>
+      <div class="small muted">16 pads, 4 kits y un feel a lo Dilla. Graba un bucle y suéltalo en el Trash Talk.</div></div>
+      <button class="sm" onclick="openDrop()">Abrir</button></div>`;
 }
 async function viewArcade(){
   $('#tab').innerHTML = '<p class="muted" style="margin-top:14px">Cargando…</p>';
   await arcLoad(); if(S.view !== 'arcade') return;
   $('#tab').innerHTML = `
-    <p style="margin-top:14px"><a href="#" onclick="arcStop();closeView();return false">← Volver a Challenge</a></p>
+    <p style="margin-top:14px"><a href="#" onclick="arcStop();closeView();return false">← Volver a Playground</a></p>
     <h1 style="margin-bottom:2px;font-family:ui-monospace,Menlo,monospace;letter-spacing:.04em">${ARCG[ARC.game].name}</h1>
     <p class="small muted" style="margin-top:0">${ARCG[ARC.game].how}</p>
     <button style="width:100%;font-size:18px;padding:14px" onclick="arcOpen()">▶ Jugar</button>
@@ -1508,7 +1533,7 @@ const arcRestart = () => ARC.game === 'air' ? airStart() : arcStart();
 function arcEsc(e){ if(e.key === 'Escape' && !(e.target && e.target.tagName === 'INPUT')) arcClose(); }
 function arcClose(silent){
   const m = $('#arcModal'); if(!m) return;
-  arcStop(); m.remove(); document.documentElement.classList.remove('arclock'); document.removeEventListener('keydown', arcEsc);
+  arcStop(); if(typeof dropStopSeq === 'function' && !DROP.playingPost) dropStopSeq(); m.remove(); document.documentElement.classList.remove('arclock', 'droplock'); document.removeEventListener('keydown', arcEsc);
   if(!silent && S.view === 'arcade') viewArcade();
 }
 function arcMuted(){ try{ return !!localStorage.getItem('arcMute'); }catch(e){ return false; } }
@@ -1787,6 +1812,188 @@ function airDraw(){ const c = ARC.cx, g = ARC.g, W = 320, H = 220; if(!c || !g) 
     c.textAlign = 'center'; c.font = 'bold 15px ui-monospace,Menlo,monospace'; c.fillStyle = g.ok ? (g.d >= AIR.FT ? '#f8b538' : '#2fbf6b') : '#ff6b5a';
     c.fillText(g.msg, W / 2, 66); if(g.ok){ c.font = 'bold 12px ui-monospace,Menlo,monospace'; c.fillStyle = '#fff'; c.fillText('DESDE ' + airM(g.d), W / 2, 82); } c.textAlign = 'left'; }
 }
+// ---------- DROP: máquina de 16 pads (homenaje a J Dilla) ----------
+// Todo el sonido se sintetiza en el navegador con Web Audio: sin samples de terceros.
+const DROP = { kit:'lofi', bpm:80, bars:2, feel:.5, ev:[], rec:false, playing:false, metro:true, ctx:null };
+const DKITS = {
+  lofi: { name:'Lo-fi', bpm:80, cut:3200, drive:1.6, crackle:.035 },
+  east: { name:'East Coast', bpm:92, cut:7500, drive:3.2, crackle:.012 },
+  west: { name:'West Coast', bpm:95, cut:10000, drive:2, crackle:0 },
+  rnb:  { name:'R&B', bpm:72, cut:6500, drive:1.2, crackle:0 }
+};
+const mtof = n => 440 * Math.pow(2, (n - 69) / 12);
+function dropCtx(){
+  if(DROP.ctx){ if(DROP.ctx.state === 'suspended') DROP.ctx.resume(); return DROP.ctx; }
+  try { if(navigator.audioSession) navigator.audioSession.type = 'playback'; } catch(e){}
+  const A = DROP.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const len = A.sampleRate * 2, b = A.createBuffer(1, len, A.sampleRate), d = b.getChannelData(0);
+  for(let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  DROP.noise = b;
+  DROP.comp = A.createDynamicsCompressor(); DROP.comp.threshold.value = -14; DROP.comp.ratio.value = 4;
+  DROP.out = A.createGain(); DROP.out.gain.value = .9;
+  DROP.lp = A.createBiquadFilter(); DROP.lp.type = 'lowpass';
+  DROP.sat = A.createWaveShaper();
+  DROP.bus = A.createGain();
+  DROP.bus.connect(DROP.sat); DROP.sat.connect(DROP.lp); DROP.lp.connect(DROP.comp); DROP.comp.connect(DROP.out); DROP.out.connect(A.destination);
+  dropColor();
+  return A;
+}
+function dropColor(){ const K = DKITS[DROP.kit], A = DROP.ctx; if(!A) return;
+  DROP.lp.frequency.setTargetAtTime(K.cut, A.currentTime, .05);
+  const n = 1024, c = new Float32Array(n), k = K.drive; for(let i = 0; i < n; i++){ const x = i * 2 / n - 1; c[i] = Math.tanh(k * x) / Math.tanh(k); } DROP.sat.curve = c;
+  if(DROP.crk){ try { DROP.crk.stop(); } catch(e){} DROP.crk = null; }
+  if(K.crackle){ const s = A.createBufferSource(), len = A.sampleRate * 3, b = A.createBuffer(1, len, A.sampleRate), d = b.getChannelData(0);
+    for(let i = 0; i < len; i++) d[i] = Math.random() < .0009 ? (Math.random() * 2 - 1) : (Math.random() * 2 - 1) * .015;
+    s.buffer = b; s.loop = true; const g = A.createGain(); g.gain.value = K.crackle * 6; const f = A.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 900;
+    s.connect(f); f.connect(g); g.connect(DROP.comp); s.start(); DROP.crk = s; }
+}
+// --- voces ---
+function dEnv(g, t, a, peak, dec){ g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + a + dec); }
+function dOsc(type, f, t, dur, peak, dec, dest){ const A = DROP.ctx, o = A.createOscillator(), g = A.createGain(); o.type = type; o.frequency.setValueAtTime(f, t); dEnv(g, t, .004, peak, dec); o.connect(g); g.connect(dest || DROP.bus); o.start(t); o.stop(t + dur); return o; }
+function dNoise(t, dur, peak, dec, ftype, freq, q){ const A = DROP.ctx, s = A.createBufferSource(), f = A.createBiquadFilter(), g = A.createGain();
+  s.buffer = DROP.noise; f.type = ftype; f.frequency.setValueAtTime(freq, t); if(q) f.Q.value = q; dEnv(g, t, .002, peak, dec);
+  s.connect(f); f.connect(g); g.connect(DROP.bus); s.start(t, Math.random()); s.stop(t + dur); return f; }
+const DV = {
+  kick:(t, o = {}) => { const A = DROP.ctx, os = A.createOscillator(), g = A.createGain(); os.type = 'sine';
+    os.frequency.setValueAtTime(o.f0 || 150, t); os.frequency.exponentialRampToValueAtTime(o.f1 || 45, t + (o.sweep || .12));
+    dEnv(g, t, .003, o.gain || 1, o.dec || .45); os.connect(g); g.connect(DROP.bus); os.start(t); os.stop(t + (o.dec || .45) + .1);
+    if(o.click !== 0) dNoise(t, .03, .25 * (o.click || 1), .02, 'highpass', 2500); },
+  snare:(t, o = {}) => { dOsc('triangle', o.tone || 190, t, .2, .35, .12); dNoise(t, .35, o.gain || .6, o.dec || .2, o.ft || 'highpass', o.ff || 1200); },
+  clap:(t, o = {}) => { [0, .012, .024, .036].forEach((d, i) => dNoise(t + d, .2, i < 3 ? .5 : .7, i < 3 ? .02 : (o.dec || .16), 'bandpass', 1400, 1.2)); },
+  rim:(t) => { dOsc('square', 420, t, .06, .25, .04); dNoise(t, .05, .3, .03, 'bandpass', 3200, 4); },
+  snap:(t) => { dNoise(t, .1, .7, .06, 'bandpass', 2600, 3); },
+  hat:(t, o = {}) => { dNoise(t, (o.dec || .05) + .05, o.gain || .35, o.dec || .05, 'highpass', 7500); },
+  ride:(t) => { [1.0, 1.34, 1.79, 2.23].forEach(r => dOsc('square', 520 * r, t, .9, .04, .8)); dNoise(t, .9, .12, .7, 'highpass', 6000); },
+  shaker:(t) => { const f = dNoise(t, .14, .3, .1, 'bandpass', 6000, 1); },
+  tom:(t, o = {}) => { const A = DROP.ctx, os = A.createOscillator(), g = A.createGain(); os.frequency.setValueAtTime(o.f || 180, t); os.frequency.exponentialRampToValueAtTime((o.f || 180) * .6, t + .25);
+    dEnv(g, t, .004, .6, .3); os.connect(g); g.connect(DROP.bus); os.start(t); os.stop(t + .4); },
+  cowbell:(t) => { dOsc('square', 560, t, .3, .12, .25); dOsc('square', 845, t, .3, .1, .25); },
+  bass:(t, o = {}) => { const A = DROP.ctx, os = A.createOscillator(), g = A.createGain(), f = mtof(o.n || 36);
+    os.type = 'sine'; os.frequency.setValueAtTime(f * (o.glide ? 1.5 : 1), t); os.frequency.exponentialRampToValueAtTime(f, t + (o.glide ? .08 : .01));
+    dEnv(g, t, .005, o.gain || .9, o.dec || .9); os.connect(g); g.connect(DROP.bus); os.start(t); os.stop(t + (o.dec || .9) + .1);
+    if(o.grit){ dOsc('triangle', f * 2, t, .3, .15, .2); } },
+  keys:(t, o = {}) => { (o.ch || [60, 64, 67]).forEach((n, i) => { const A = DROP.ctx, f = mtof(n);
+      if(o.type === 'pad'){ const os = A.createOscillator(), os2 = A.createOscillator(), g = A.createGain(), lp = A.createBiquadFilter(); os.type = 'sawtooth'; os2.type = 'sawtooth';
+        os.frequency.value = f; os2.frequency.value = f * 1.006; lp.type = 'lowpass'; lp.frequency.value = 1400;
+        g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.07, t + .25); g.gain.exponentialRampToValueAtTime(.0001, t + 2.2);
+        os.connect(lp); os2.connect(lp); lp.connect(g); g.connect(DROP.bus); os.start(t); os2.start(t); os.stop(t + 2.3); os2.stop(t + 2.3); }
+      else if(o.type === 'stab'){ dOsc('sawtooth', f, t + i * .004, .5, .07, .35); dOsc('triangle', f / 2, t, .5, .08, .3); }
+      else { const c = A.createOscillator(), m = A.createOscillator(), mg = A.createGain(), g = A.createGain();   // Rhodes FM
+        c.frequency.value = f; m.frequency.value = f * 14; mg.gain.setValueAtTime(f * 1.6, t); mg.gain.exponentialRampToValueAtTime(1, t + .25);
+        m.connect(mg); mg.connect(c.frequency); dEnv(g, t + i * .012, .006, .16, 1.6); c.connect(g); g.connect(DROP.bus);
+        c.start(t); m.start(t); c.stop(t + 1.8); m.stop(t + 1.8); } }); },
+  lead:(t, o = {}) => { const A = DROP.ctx, os = A.createOscillator(), lfo = A.createOscillator(), lg = A.createGain(), g = A.createGain(), f = mtof(o.n || 79);
+    os.type = 'sine'; os.frequency.setValueAtTime(f * .92, t); os.frequency.exponentialRampToValueAtTime(f, t + .12);
+    lfo.frequency.value = 5.5; lg.gain.value = f * .012; lfo.connect(lg); lg.connect(os.frequency);
+    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.22, t + .06); g.gain.exponentialRampToValueAtTime(.0001, t + .9);
+    os.connect(g); g.connect(DROP.bus); os.start(t); lfo.start(t); os.stop(t + 1); lfo.stop(t + 1); },
+  vox:(t, o = {}) => { const A = DROP.ctx, F = { a:[800, 1150, 2900], e:[400, 1600, 2700], o:[450, 800, 2830], u:[325, 700, 2530], m:[250, 1700, 2500] }[o.v || 'a'];
+    const src = A.createOscillator(), g = A.createGain(), f0 = mtof(o.n || 57); src.type = 'sawtooth'; src.frequency.setValueAtTime(f0 * (o.bend || 1), t); src.frequency.exponentialRampToValueAtTime(f0, t + .08);
+    dEnv(g, t, .02, .9, o.dec || .35); src.connect(g);
+    F.forEach((ff, i) => { const bp = A.createBiquadFilter(), fg = A.createGain(); bp.type = 'bandpass'; bp.frequency.value = ff; bp.Q.value = 9; fg.gain.value = [1, .5, .25][i]; g.connect(bp); bp.connect(fg); fg.connect(DROP.bus); });
+    src.start(t); src.stop(t + (o.dec || .35) + .1); },
+  scratch:(t) => { const f = dNoise(t, .32, .5, .28, 'bandpass', 600, 5); f.frequency.setValueAtTime(600, t); f.frequency.exponentialRampToValueAtTime(3500, t + .09); f.frequency.exponentialRampToValueAtTime(500, t + .2); f.frequency.exponentialRampToValueAtTime(2800, t + .3); },
+  stop:(t) => { const A = DROP.ctx, os = A.createOscillator(), g = A.createGain(); os.type = 'sawtooth'; os.frequency.setValueAtTime(220, t); os.frequency.exponentialRampToValueAtTime(30, t + .7);
+    dEnv(g, t, .01, .2, .7); const lp = A.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; os.connect(lp); lp.connect(g); g.connect(DROP.bus); os.start(t); os.stop(t + .8); }
+};
+// 16 pads por kit: fila 1 batería, fila 2 hats y percusión, fila 3 teclas o melodía, fila 4 voces, bajos y efectos
+const DPADS = {
+  lofi:[['KICK',t=>DV.kick(t,{f0:120,f1:42,dec:.5,click:.5})],['KICK 2',t=>DV.kick(t,{f0:100,f1:40,dec:.3,gain:.7,click:.3})],['SNARE',t=>DV.snare(t,{ft:'bandpass',ff:1800,gain:.5,dec:.22})],['RIM',t=>DV.rim(t)],
+    ['HAT',t=>DV.hat(t,{gain:.22})],['OPEN',t=>DV.hat(t,{dec:.28,gain:.18})],['SHAKER',t=>DV.shaker(t)],['SNAP',t=>DV.snap(t)],
+    ['Fmaj7',t=>DV.keys(t,{ch:[53,57,60,64]})],['Em7',t=>DV.keys(t,{ch:[52,55,59,62]})],['Dm9',t=>DV.keys(t,{ch:[50,53,57,60,64]})],['Cmaj7',t=>DV.keys(t,{ch:[48,52,55,59]})],
+    ['AH',t=>DV.vox(t,{v:'a',n:57})],['OH',t=>DV.vox(t,{v:'o',n:55,bend:1.1})],['BASS F',t=>DV.bass(t,{n:29,dec:.8})],['VINYL',t=>DV.stop(t)]],
+  east:[['KICK',t=>DV.kick(t,{f0:160,f1:48,dec:.35,click:1.2})],['KICK 2',t=>DV.kick(t,{f0:140,f1:45,dec:.22,gain:.8})],['SNARE',t=>DV.snare(t,{tone:210,gain:.75,dec:.18})],['CLAP',t=>DV.clap(t)],
+    ['HAT',t=>DV.hat(t,{gain:.3})],['OPEN',t=>DV.hat(t,{dec:.3,gain:.22})],['RIDE',t=>DV.ride(t)],['TOM',t=>DV.tom(t,{f:140})],
+    ['Am',t=>DV.keys(t,{type:'stab',ch:[57,60,64]})],['Dm',t=>DV.keys(t,{type:'stab',ch:[50,53,57]})],['E7',t=>DV.keys(t,{type:'stab',ch:[52,56,59,62]})],['F',t=>DV.keys(t,{type:'stab',ch:[53,57,60]})],
+    ['YO',t=>DV.vox(t,{v:'o',n:50,dec:.22,bend:1.3})],['HEY',t=>DV.vox(t,{v:'e',n:55,dec:.25,bend:1.2})],['SCRATCH',t=>DV.scratch(t)],['BASS A',t=>DV.bass(t,{n:33,dec:.5,grit:1})]],
+  west:[['808',t=>DV.kick(t,{f0:110,f1:38,dec:1.1,click:.4})],['KICK 2',t=>DV.kick(t,{f0:130,f1:45,dec:.3,gain:.8})],['CLAP',t=>DV.clap(t,{dec:.22})],['SNARE',t=>DV.snare(t,{tone:200,gain:.55})],
+    ['HAT',t=>DV.hat(t,{gain:.25})],['OPEN',t=>DV.hat(t,{dec:.3,gain:.2})],['SHAKER',t=>DV.shaker(t)],['COWBELL',t=>DV.cowbell(t)],
+    ['LEAD G',t=>DV.lead(t,{n:79})],['LEAD B♭',t=>DV.lead(t,{n:82})],['LEAD C',t=>DV.lead(t,{n:84})],['LEAD D',t=>DV.lead(t,{n:86})],
+    ['BASS G',t=>DV.bass(t,{n:31,glide:1,dec:1})],['BASS B♭',t=>DV.bass(t,{n:34,glide:1,dec:1})],['BASS C',t=>DV.bass(t,{n:36,glide:1,dec:1})],['AY',t=>DV.vox(t,{v:'e',n:52,bend:1.25})]],
+  rnb:[['KICK',t=>DV.kick(t,{f0:110,f1:40,dec:.6,click:.3})],['KICK 2',t=>DV.kick(t,{f0:90,f1:38,dec:.35,gain:.7,click:0})],['SNAP',t=>DV.snap(t)],['RIM',t=>DV.rim(t)],
+    ['HAT',t=>DV.hat(t,{gain:.18})],['OPEN',t=>DV.hat(t,{dec:.32,gain:.15})],['SHAKER',t=>DV.shaker(t)],['TOM',t=>DV.tom(t,{f:120})],
+    ['E♭maj9',t=>DV.keys(t,{type:'pad',ch:[51,55,58,62,65]})],['Cm9',t=>DV.keys(t,{type:'pad',ch:[48,51,55,58,62]})],['A♭maj7',t=>DV.keys(t,{type:'pad',ch:[56,60,63,67]})],['B♭sus',t=>DV.keys(t,{type:'pad',ch:[58,63,65,70]})],
+    ['OOH',t=>DV.vox(t,{v:'u',n:63,dec:.6})],['MMM',t=>DV.vox(t,{v:'m',n:58,dec:.5})],['808 E♭',t=>DV.bass(t,{n:27,glide:1,dec:1.2})],['808 C',t=>DV.bass(t,{n:24,glide:1,dec:1.2})]]
+};
+const dBeat = () => 60 / DROP.bpm, dLoopBeats = () => DROP.bars * 4;
+function dQ(b, feel){ const g = Math.round(b * 4) / 4; return g + (b - g) * feel; }   // feel 0 = cuantizado, 1 = a lo Dilla (tal cual lo tocaste)
+function dropHit(i, rec){ const A = dropCtx(), p = DPADS[DROP.kit][i]; if(!p) return; p[1](A.currentTime + .005);
+  const el = document.querySelector(`.dpad[data-i="${i}"]`); if(el){ el.classList.add('hit'); setTimeout(() => el.classList.remove('hit'), 110); }
+  dLcd(p[0]);
+  if(rec && DROP.rec && DROP.playing){ const tb = (A.currentTime - DROP.t0) / dBeat(), beat = tb % dLoopBeats(); DROP.ev.push([Math.round(beat * 1000) / 1000, i, Math.floor(tb / dLoopBeats())]); dLcd(p[0] + ' ● ' + DROP.ev.length); } }
+function dLcd(t){ const l = $('#dLcd2'); if(l) l.textContent = t; }
+// Secuenciador: bucle de N compases con programación anticipada
+function dropPlay(ev, opts = {}){ const A = dropCtx(); dropStopSeq();
+  DROP.playing = true; DROP.t0 = A.currentTime + .08; DROP.next = 0; DROP.loops = 0; DROP.seqEv = ev; DROP.maxLoops = opts.loops || 0;
+  const tick = () => { if(!DROP.playing) return; const now = A.currentTime, ahead = now + .15, bl = dBeat(), L = dLoopBeats();
+    while(DROP.t0 + DROP.next * bl < ahead){
+      const b = DROP.next, loopN = Math.floor(b / L), inLoop = b - loopN * L;
+      if(DROP.maxLoops && loopN >= DROP.maxLoops){ dropStopSeq(); if(opts.done) opts.done(); return; }
+      const sixteenth = Math.round(inLoop * 4);
+      if(DROP.metro && DROP.rec && sixteenth % 4 === 0){ const t = DROP.t0 + b * bl; dOsc('square', sixteenth % 16 === 0 ? 1500 : 1000, t, .05, .06, .03, DROP.comp); }
+      (DROP.seqEv || ev).forEach(([eb, pi, rl]) => { if(rl === loopN) return; const qb = dQ(eb, DROP.feel); if(qb >= inLoop && qb < inLoop + .25){ const p = DPADS[DROP.kit][pi]; if(p) p[1](DROP.t0 + (loopN * L + qb) * bl); } });
+      DROP.next += .25; }
+    const bar = Math.floor(((now - DROP.t0) / bl % L) / 4) + 1, el = $('#dLcd1'); if(el && opts.lcd !== false) el.textContent = `${DKITS[DROP.kit].name} · ${DROP.bpm} BPM · ${DROP.rec ? '● REC' : '▶'} ${Math.max(1, bar)}/${DROP.bars}`;
+    DROP.timer = setTimeout(tick, 25); };
+  tick();
+}
+function dropStopSeq(){ DROP.playing = false; clearTimeout(DROP.timer); }
+// --- Interfaz ---
+function openDrop(){
+  arcClose(true);
+  const m = document.createElement('div'); m.id = 'arcModal'; m.className = 'arcm drop';
+  m.innerHTML = `<button class="arcx" onclick="dropClose()" aria-label="Cerrar">✕</button><div class="arcbox"><div class="mpc">
+    <div class="mpc-top"><div><div class="mpc-name">DROP</div><div class="mpc-sub">Para J Dilla, sin cuantizar</div></div>
+      <div class="mpc-lcd"><div id="dLcd1">${DKITS[DROP.kit].name} · ${DROP.bpm} BPM</div><div id="dLcd2">Toca los pads</div></div></div>
+    <div class="mpc-row">${Object.keys(DKITS).map(k => `<button class="mpc-btn ${k === DROP.kit ? 'on' : ''}" data-kit="${k}">${DKITS[k].name}</button>`).join('')}</div>
+    <div class="mpc-pads">${[12,13,14,15,8,9,10,11,4,5,6,7,0,1,2,3].map(i => `<div class="dpad" data-i="${i}"><span>${DPADS[DROP.kit][i][0]}</span></div>`).join('')}</div>
+    <div class="mpc-row">
+      <button class="mpc-btn" id="dPlay">▶ PLAY</button><button class="mpc-btn rec ${DROP.rec ? 'on' : ''}" id="dRec">● REC</button>
+      <button class="mpc-btn" id="dClr">BORRAR</button><button class="mpc-btn" id="dMet">${DROP.metro ? 'CLICK ON' : 'CLICK OFF'}</button></div>
+    <div class="mpc-row" style="align-items:center;gap:10px">
+      <button class="mpc-btn" id="dBm">−</button><span class="mpc-val" id="dBpm">${DROP.bpm} BPM</span><button class="mpc-btn" id="dBp">+</button>
+      <span class="mpc-val" style="margin-left:auto">${DROP.bars} compases</span></div>
+    <label class="mpc-feel"><span>MPC</span><input type="range" id="dFeel" min="0" max="100" value="${Math.round(DROP.feel * 100)}"><span>DILLA</span></label>
+    <div class="mpc-row"><input id="dCap" maxlength="200" placeholder="Suelta algo con tu beat… (opcional)"><button class="mpc-btn post" id="dPost">Soltar en el Trash Talk</button></div>
+  </div></div>`;
+  document.body.appendChild(m); document.documentElement.classList.add('droplock');
+  dropBind(); dropCtx();
+}
+function dropRedrawPads(){ document.querySelectorAll('.dpad').forEach(el => { el.querySelector('span').textContent = DPADS[DROP.kit][+el.dataset.i][0]; }); }
+function dropBind(){
+  document.querySelectorAll('.dpad').forEach(el => { el.onpointerdown = e => { e.preventDefault(); dropHit(+el.dataset.i, true); }; el.oncontextmenu = e => e.preventDefault(); });
+  document.querySelectorAll('[data-kit]').forEach(b => b.onclick = () => { DROP.kit = b.dataset.kit; DROP.bpm = DKITS[DROP.kit].bpm; dropCtx(); dropColor();
+    document.querySelectorAll('[data-kit]').forEach(x => x.classList.toggle('on', x === b)); dropRedrawPads(); $('#dBpm').textContent = DROP.bpm + ' BPM';
+    if(DROP.playing) dropPlay(DROP.ev); else $('#dLcd1').textContent = `${DKITS[DROP.kit].name} · ${DROP.bpm} BPM`; });
+  $('#dPlay').onclick = () => { if(DROP.playing){ dropStopSeq(); DROP.rec = false; $('#dRec').classList.remove('on'); $('#dPlay').textContent = '▶ PLAY'; dLcd('Parado'); }
+    else { dropPlay(DROP.ev); $('#dPlay').textContent = '■ STOP'; } };
+  $('#dRec').onclick = () => { DROP.rec = !DROP.rec; $('#dRec').classList.toggle('on', DROP.rec); if(DROP.rec && !DROP.playing){ dropPlay(DROP.ev); $('#dPlay').textContent = '■ STOP'; } dLcd(DROP.rec ? 'Grabando: toca los pads' : 'Grabación en pausa'); };
+  $('#dClr').onclick = () => { DROP.ev = []; dLcd('Bucle vacío'); };
+  $('#dMet').onclick = () => { DROP.metro = !DROP.metro; $('#dMet').textContent = DROP.metro ? 'CLICK ON' : 'CLICK OFF'; };
+  $("#dBm").onclick = () => { DROP.bpm = Math.max(60, DROP.bpm - 2); $('#dBpm').textContent = DROP.bpm + ' BPM'; };
+  $("#dBp").onclick = () => { DROP.bpm = Math.min(140, DROP.bpm + 2); $('#dBpm').textContent = DROP.bpm + ' BPM'; };
+  $('#dFeel').oninput = e => { DROP.feel = +e.target.value / 100; dLcd(DROP.feel > .85 ? 'Feel: puro Dilla' : DROP.feel < .15 ? 'Feel: cuantizado' : 'Feel: ' + Math.round(DROP.feel * 100) + ' %'); };
+  $('#dPost').onclick = dropPost;
+}
+async function dropPost(){
+  if(!DROP.ev.length) return toast('Graba algo antes de soltarlo: PLAY, REC y a los pads');
+  const ev = DROP.ev.slice(0, 600).map(e => [e[0], e[1]]), body = mentEncode(($('#dCap')?.value || '').trim());
+  const { error } = await sb.rpc('post_beat', { p_league:S.league.id, p_body:body, p_data:{ kit:DROP.kit, bpm:DROP.bpm, bars:DROP.bars, feel:DROP.feel, ev } });
+  if(error) return fail(error);
+  toast('Beat soltado en el Trash Talk'); const c = $('#dCap'); if(c) c.value = '';
+}
+function dropClose(){ dropStopSeq(); DROP.rec = false; arcClose(true); }
+// Escuchar un beat publicado en el muro (dos vueltas y para)
+function beatPlay(id){
+  const p = (S.wallPosts || []).find(x => x.id === id); if(!p) return;
+  const btn = document.querySelector(`[data-beat="${id}"]`);
+  if(DROP.playing && DROP.playingPost === id){ dropStopSeq(); DROP.playingPost = null; if(btn) btn.textContent = '▶ Escuchar'; return; }
+  document.querySelectorAll('[data-beat]').forEach(b => b.textContent = '▶ Escuchar');
+  const d = p.data || {}; Object.assign(DROP, { kit:d.kit || 'lofi', bpm:d.bpm || 90, bars:d.bars || 2, feel:d.feel ?? .5, rec:false });
+  dropCtx(); dropColor(); DROP.playingPost = id; if(btn) btn.textContent = '■ Parar';
+  dropPlay(d.ev || [], { loops:2, lcd:false, done:() => { DROP.playingPost = null; if(btn) btn.textContent = '▶ Escuchar'; } });
+}
+
 function renderView(){
   ({ perfil:viewProfile, reglas:viewRules, comi:viewComm, arcade:viewArcade, notis:viewNotis, jornada:viewJornada, hemeroteca:viewHemeroteca })[S.view]();
 }
@@ -1856,7 +2063,7 @@ function viewRules(){
     </div>
     <h2>Clasificación</h2>
     <div class="card small"><p>Estilo Fórmula 1: cada jornada reparte puntos de liga según el puesto. Con 3 equipos: <b>3 · 1 · 0</b>. Con 10: <b>25 · 18 · 15 · 12 · 10 · 8 · 6 · 4 · 2 · 1</b>. Si dos equipos empatan en una jornada, ambos se llevan los puntos del puesto más alto.</p>
-      <p><b>La liga se decide solo por jornadas.</b> Todo lo demás está en <b>Challenge</b> y no suma puntos de liga: da <b>insignias</b> que se gastan durante la temporada regular.</p>
+      <p><b>La liga se decide solo por jornadas.</b> Todo lo demás está en <b>Playground</b> y no suma puntos de liga: da <b>insignias</b> que se gastan durante la temporada regular.</p>
       <p><b>Quinteto Drafteados</b> (cada lunes): +1M de saldo por cada jugador del quinteto que tuvieras alineado. <b>Rookie del mes</b>: 🌟 uno de tus rookies puntúa ×2 una jornada. <b>Mánager del mes</b>: 🏅 mención. <b>Pupas del mes</b>: 🏅 mención y +1M. <b>Copa NBA</b>: ⚡ segundo capitán y millones. <b>All-Star</b>: 🛡️ banquillo al 50 % una jornada y millones. <b>Pedradas</b>: ventaja para el draft de la temporada siguiente.</p></div>
     <h2>Mercado</h2>
     <div class="card small">
@@ -2011,6 +2218,9 @@ async function tribunalCard(){
 function postHTML(p){
   const when = new Date(p.created_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}), d = p.data || {};
   const team = uid => esc(member(uid).team);
+  if(p.kind === 'beat') return `<li id="post-${p.id}" style="align-items:flex-start">${avatar(p.user_id, 32)}<div class="grow"><div class="small muted"><b style="color:var(--text)">${team(p.user_id)}</b> · ${when}</div>
+    <div class="beatpost"><button class="sm" data-beat="${p.id}" onclick="beatPlay(${p.id})">▶ Escuchar</button><div><div class="name">🎛️ Suelta un beat</div><div class="small muted">DROP · ${esc((DKITS[d.kit] || {}).name || d.kit)} · ${d.bpm} BPM · feel ${Math.round((d.feel ?? .5) * 100)} %</div></div></div>
+    ${p.body ? `<div style="overflow-wrap:anywhere;margin-top:4px">${mentHTML(p.body)}</div>` : ''}${rxBar('post', p.id)}</div></li>`;
   if(p.kind === 'msg'){ const forMe = (d.mentions || []).includes(S.user.id) && p.user_id !== S.user.id;
     return `<li id="post-${p.id}" class="${forMe ? 'ment-me' : ''}" style="align-items:flex-start">${avatar(p.user_id, 32)}<div class="grow"><div class="small muted"><b style="color:var(--text)">${team(p.user_id)}</b> · ${when}</div><div style="overflow-wrap:anywhere">${mentHTML(p.body)}</div>${rxBar('post', p.id)}</div></li>`; }
   let txt = '';
@@ -2196,7 +2406,7 @@ async function renderHome(){
     sb.from('league_posts').select('*').eq('league_id', lid).order('created_at', { ascending:false }).range(0, 49),
     loadRx(), loadImp(), loadIntel(), loadRumors(), loadLastFinal(), loadChronicle(), (S.weekView = null, loadScores())
   ]);
-  const posts = wl.data || [];
+  const posts = wl.data || []; S.wallPosts = posts;
   const draftMsg = $('#wmsg')?.value || '', wallTop = document.querySelector('.wall')?.scrollTop || 0;
   if(S.tab !== 'hoy') return;
   const preds = (pr.data || []).length, predOpen = S.league.predictions_close_at && new Date() < new Date(S.league.predictions_close_at);
