@@ -131,6 +131,13 @@ html.droplock,html.droplock body{overflow:hidden;overscroll-behavior:none}
 .mpc-feel input{flex:1;margin:0;accent-color:#e8772e}
 .mpc input#dCap{flex:1 1 140px;margin:0;background:#efede7;color:#1d1d1f;border-color:#b5b2a9}
 .beatpost{display:flex;gap:10px;align-items:center;margin-top:4px}
+.thread{margin-top:4px}
+.thread .reply{display:flex;gap:8px;align-items:flex-start;margin:8px 0 0;padding-left:8px;border-left:2px solid var(--line)}
+.thread .reply.ment-me{background:rgba(242,140,40,.08);margin-left:0;margin-right:0;padding:4px 8px}
+.thread .reply-btn{color:var(--muted);text-decoration:none;font-size:13px;margin-top:6px}
+.thread .reply-form{margin-top:8px}
+.thread .reply .rx{margin-top:2px}
+.thread .reply .rx button{padding:2px 8px;font-size:12px}
 html.arclock,html.arclock body{overflow:hidden;overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 .arcm,.arcm *{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 .arcm input{-webkit-user-select:text;user-select:text}
@@ -1432,7 +1439,7 @@ async function loadNotis(){
   S.notiSeen = since; S.unread = S.notis.filter(x => new Date(x.created_at) > since).length;
   const b = $('#bellN'); if(b){ b.textContent = S.unread > 9 ? '9+' : S.unread; b.classList.toggle('hidden', !S.unread); }
 }
-const NICON = { final:'🏆', insignia:'🏅', points:'📊', trade:'🔁', trade_ok:'✅', trade_no:'❌', impugno:'⚖️', comi:'📣', org:'🏀', offer:'🤝', deal:'✅', room:'⚔️', frozen:'🧊', pedradas:'🔮', lineup:'📋', chronicle:'📰', mention:'💬' };
+const NICON = { final:'🏆', insignia:'🏅', points:'📊', trade:'🔁', trade_ok:'✅', trade_no:'❌', impugno:'⚖️', comi:'📣', org:'🏀', offer:'🤝', deal:'✅', room:'⚔️', frozen:'🧊', pedradas:'🔮', lineup:'📋', chronicle:'📰', mention:'💬', reply:'↩️' };
 async function viewNotis(){
   $('#tab').innerHTML = '<p class="muted" style="margin-top:14px">Cargando…</p>';
   await loadNotis(); if(S.view !== 'notis') return;
@@ -1943,7 +1950,7 @@ function openDrop(){
   arcClose(true);
   const m = document.createElement('div'); m.id = 'arcModal'; m.className = 'arcm drop';
   m.innerHTML = `<button class="arcx" onclick="dropClose()" aria-label="Cerrar">✕</button><div class="arcbox"><div class="mpc">
-    <div class="mpc-top"><div><div class="mpc-name">DROP</div><div class="mpc-sub">Para J Dilla, sin cuantizar</div></div>
+    <div class="mpc-top"><div><div class="mpc-name">DROP</div><div class="mpc-sub">KWC for Dilla</div></div>
       <div class="mpc-lcd"><div id="dLcd1">${DKITS[DROP.kit].name} · ${DROP.bpm} BPM</div><div id="dLcd2">Toca los pads</div></div></div>
     <div class="mpc-row">${Object.keys(DKITS).map(k => `<button class="mpc-btn ${k === DROP.kit ? 'on' : ''}" data-kit="${k}">${DKITS[k].name}</button>`).join('')}</div>
     <div class="mpc-pads">${[12,13,14,15,8,9,10,11,4,5,6,7,0,1,2,3].map(i => `<div class="dpad" data-i="${i}"><span>${DPADS[DROP.kit][i][0]}</span></div>`).join('')}</div>
@@ -2220,9 +2227,9 @@ function postHTML(p){
   const team = uid => esc(member(uid).team);
   if(p.kind === 'beat') return `<li id="post-${p.id}" style="align-items:flex-start">${avatar(p.user_id, 32)}<div class="grow"><div class="small muted"><b style="color:var(--text)">${team(p.user_id)}</b> · ${when}</div>
     <div class="beatpost"><button class="sm" data-beat="${p.id}" onclick="beatPlay(${p.id})">▶ Escuchar</button><div><div class="name">🎛️ Suelta un beat</div><div class="small muted">DROP · ${esc((DKITS[d.kit] || {}).name || d.kit)} · ${d.bpm} BPM · feel ${Math.round((d.feel ?? .5) * 100)} %</div></div></div>
-    ${p.body ? `<div style="overflow-wrap:anywhere;margin-top:4px">${mentHTML(p.body)}</div>` : ''}${rxBar('post', p.id)}</div></li>`;
+    ${p.body ? `<div style="overflow-wrap:anywhere;margin-top:4px">${mentHTML(p.body)}</div>` : ''}${rxBar('post', p.id)}${threadHTML(p)}</div></li>`;
   if(p.kind === 'msg'){ const forMe = (d.mentions || []).includes(S.user.id) && p.user_id !== S.user.id;
-    return `<li id="post-${p.id}" class="${forMe ? 'ment-me' : ''}" style="align-items:flex-start">${avatar(p.user_id, 32)}<div class="grow"><div class="small muted"><b style="color:var(--text)">${team(p.user_id)}</b> · ${when}</div><div style="overflow-wrap:anywhere">${mentHTML(p.body)}</div>${rxBar('post', p.id)}</div></li>`; }
+    return `<li id="post-${p.id}" class="${forMe ? 'ment-me' : ''}" style="align-items:flex-start">${avatar(p.user_id, 32)}<div class="grow"><div class="small muted"><b style="color:var(--text)">${team(p.user_id)}</b> · ${when}</div><div style="overflow-wrap:anywhere">${mentHTML(p.body)}</div>${rxBar('post', p.id)}${threadHTML(p)}</div></li>`; }
   let txt = '';
   if(p.kind === 'room_open') txt = `<b>${(d.users||[]).map(team).join(' y ')}</b> se pelean por <b>${pname(d.player)}</b>. Mesa de negociación abierta.`;
   else if(p.kind === 'deal') txt = `<b>Acuerdo alcanzado:</b> ${team(d.keeper)} se queda a <b>${pname(d.player)}</b>.`;
@@ -2238,7 +2245,37 @@ function postHTML(p){
   else if(p.kind === 'week_final') txt = `🏆 <b>Jornada ${d.week} · resultado final</b><br>${(d.rows || []).map(r => `${r.r}º ${team(r.u)} <b>${fmtP(r.t)}</b>`).join(' · ')}`;
   else if(p.kind === 'drafteados') txt = d.none ? `<b>Jornada ${d.week} cerrada sin quinteto de Drafteados.</b> Esta semana no hay millones.` : `<b>Quinteto Drafteados · jornada ${d.week}:</b> ${(d.players||[]).map(pname).join(', ')}. +1M de saldo por cada uno que tuvieras alineado. Jornada cerrada.`;
   else return '';
-  return `<li style="align-items:flex-start"><span class="pill accent" style="flex-shrink:0;margin-top:2px">Liga</span><div class="grow"><div>${txt}</div><div class="small muted">${when}</div>${rxBar('post', p.id)}${impBar(p)}</div></li>`;
+  return `<li id="post-${p.id}" style="align-items:flex-start"><span class="pill accent" style="flex-shrink:0;margin-top:2px">Liga</span><div class="grow"><div>${txt}</div><div class="small muted">${when}</div>${rxBar('post', p.id)}${impBar(p)}${threadHTML(p)}</div></li>`;
+}
+// ---------- Respuestas en hilo del Trash Talk ----------
+async function loadReplies(ids){
+  S.replies = {}; if(!ids.length) return;
+  const { data } = await sb.from('league_posts').select('*').in('reply_to', ids).order('created_at', { ascending:true });
+  (data || []).forEach(r => (S.replies[r.reply_to] = S.replies[r.reply_to] || []).push(r));
+}
+function threadHTML(p){
+  const rs = (S.replies || {})[p.id] || [], open = S.replyOpen === p.id, all = (S.threadAll || {})[p.id];
+  const shown = all ? rs : rs.slice(-2), hidden = rs.length - shown.length;
+  return `<div class="thread" id="th-${p.id}">
+    ${hidden > 0 ? `<button class="lnk small" onclick="threadAll(${p.id})">Ver ${hidden} ${hidden === 1 ? 'respuesta más' : 'respuestas más'}</button>` : ''}
+    ${shown.map(r => { const forMe = (r.data?.mentions || []).includes(S.user.id) && r.user_id !== S.user.id;
+      return `<div class="reply ${forMe ? 'ment-me' : ''}" id="post-${r.id}">${avatar(r.user_id, 22)}<div class="grow"><div class="small muted"><b style="color:var(--text)">${esc(member(r.user_id).team)}</b> · ${new Date(r.created_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+        <div style="overflow-wrap:anywhere">${mentHTML(r.body)}</div>${rxBar('post', r.id)}</div></div>`; }).join('')}
+    ${open ? `<form class="row reply-form" onsubmit="replySend(event, ${p.id})"><input id="rp-${p.id}" maxlength="280" placeholder="Responde… (puedes mencionar con @)" style="margin:0" value="${esc((S.replyDraft || {})[p.id] || '')}"><button class="sm" style="flex:0 0 auto">Enviar</button></form>`
+      : `<button class="lnk small reply-btn" onclick="replyOpen(${p.id})">💬 ${rs.length ? 'Responder · ' + rs.length : 'Responder'}</button>`}
+  </div>`;
+}
+function threadPaint(id){ const el = $('#th-' + id), p = (S.wallPosts || []).find(x => x.id === id); if(el && p) el.outerHTML = threadHTML(p); }
+function threadAll(id){ S.threadAll = S.threadAll || {}; S.threadAll[id] = true; threadPaint(id); }
+function replyOpen(id){
+  const prev = S.replyOpen; S.replyOpen = id; if(prev && prev !== id) threadPaint(prev); threadPaint(id);
+  const i = $('#rp-' + id); if(i){ i.focus(); i.oninput = () => { S.replyDraft = S.replyDraft || {}; S.replyDraft[id] = i.value; }; }
+}
+async function replySend(e, id){ e.preventDefault(); const i = $('#rp-' + id), v = mentEncode((i?.value || '').trim()); if(!v) return;
+  const { error } = await sb.rpc('post_reply', { p_league:S.league.id, p_post:id, p_body:v }); if(error) return fail(error);
+  S.replyDraft = S.replyDraft || {}; delete S.replyDraft[id]; S.replyOpen = null;
+  const { data } = await sb.from('league_posts').select('*').eq('reply_to', id).order('created_at', { ascending:true });
+  S.replies = S.replies || {}; S.replies[id] = data || []; threadPaint(id);
 }
 // ---------- Menciones en el Trash Talk ----------
 const firstWord = t => String(t || '').trim().split(/\s+/)[0];
@@ -2403,10 +2440,10 @@ async function renderHome(){
   const [tx, pr, wl] = await Promise.all([
     sb.from('nba_transactions').select('*').order('happened_at', { ascending:false }).range(0, 79),
     sb.from('predictions').select('award').eq('league_id', lid).eq('user_id', me),
-    sb.from('league_posts').select('*').eq('league_id', lid).order('created_at', { ascending:false }).range(0, 49),
+    sb.from('league_posts').select('*').eq('league_id', lid).is('reply_to', null).order('created_at', { ascending:false }).range(0, 49),
     loadRx(), loadImp(), loadIntel(), loadRumors(), loadLastFinal(), loadChronicle(), (S.weekView = null, loadScores())
   ]);
-  const posts = wl.data || []; S.wallPosts = posts;
+  const posts = wl.data || []; S.wallPosts = posts; await loadReplies(posts.map(p => p.id));
   const draftMsg = $('#wmsg')?.value || '', wallTop = document.querySelector('.wall')?.scrollTop || 0;
   if(S.tab !== 'hoy') return;
   const preds = (pr.data || []).length, predOpen = S.league.predictions_close_at && new Date() < new Date(S.league.predictions_close_at);
