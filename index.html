@@ -63,7 +63,7 @@ details.rival .chev{display:inline-block;transition:transform .15s}
 .stat{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px;text-align:center}
 .stat b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
 .stat span{font-size:12px;color:var(--muted)}
-.msg{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));max-width:688px;margin:0 auto;padding:12px 14px;border-radius:10px;background:var(--surface2);border:1px solid var(--line);z-index:20}
+.msg{position:fixed;left:16px;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));max-width:688px;margin:0 auto;padding:12px 14px;border-radius:10px;background:var(--surface2);border:1px solid var(--line);z-index:120}
 .msg.err{border-color:var(--bad)}
 .board{display:grid;gap:8px}
 .board .col h3{margin:0 0 6px}
@@ -2014,9 +2014,12 @@ function dropBind(){
 async function dropPost(){
   if(!DROP.ev.length) return toast('Graba algo antes de soltarlo: PLAY, REC y a los pads');
   const ev = DROP.ev.slice(0, 600).map(e => [e[0], e[1]]), body = mentEncode(($('#dCap')?.value || '').trim());
+  const btn = $('#dPost'); if(btn){ if(btn.disabled) return; btn.disabled = true; btn.textContent = 'SOLTANDO…'; }
   const { error } = await sb.rpc('post_beat', { p_league:S.league.id, p_body:body, p_data:{ kit:DROP.kit, bpm:DROP.bpm, bars:DROP.bars, feel:DROP.feel, ev } });
-  if(error) return fail(error);
-  toast('Beat soltado en el Trash Talk'); const c = $('#dCap'); if(c) c.value = '';
+  if(error){ if(btn){ btn.disabled = false; btn.textContent = 'SOLTAR ↗'; } dLcd('No se ha podido soltar'); return fail(error); }
+  try{ navigator.vibrate && navigator.vibrate(60); }catch(e){}
+  dLcd('✓ Beat soltado en el Trash Talk'); toast('✓ Beat soltado en el Trash Talk: ya lo puede escuchar la liga'); const c = $('#dCap'); if(c) c.value = '';
+  if(btn){ btn.textContent = '✓ SOLTADO'; btn.classList.add('on'); setTimeout(() => { btn.disabled = false; btn.textContent = 'SOLTAR ↗'; btn.classList.remove('on'); }, 2500); }
 }
 function dropClose(){ dropStopSeq(); DROP.rec = false; arcClose(true); dropSleep();
   const vp = document.querySelector('meta[name=viewport]'); if(vp && DROP.vp){ vp.content = DROP.vp; DROP.vp = null; } }
