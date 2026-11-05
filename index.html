@@ -1849,10 +1849,13 @@ const DKITS = {
   rnb:  { name:'R&B', bpm:72, cut:6500, drive:1.2, crackle:0 }
 };
 const mtof = n => 440 * Math.pow(2, (n - 69) / 12);
+// Tras usar el micro, iOS deja el audio en modo llamada (más retardo). Se cierra el contexto y se crea uno nuevo, rápido, para los pads.
+function dropAudioReset(){ if(!BAR.usedMic) return; BAR.usedMic = false; const old = DROP.ctx; dropStopSeq();
+  DROP.ctx = null; BAR.wl = null; BAR.ir = null; barSession(); try{ if(old) old.close(); }catch(e){} dropCtx(); }
 function dropCtx(){
   if(DROP.ctx){ if(DROP.ctx.state === 'suspended') DROP.ctx.resume(); return DROP.ctx; }
   try { if(navigator.audioSession) navigator.audioSession.type = 'playback'; } catch(e){}
-  const A = DROP.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const AC = window.AudioContext || window.webkitAudioContext; let A; try{ A = new AC({ latencyHint:'interactive' }); }catch(e){ A = new AC(); } DROP.ctx = A;
   const len = A.sampleRate * 2, b = A.createBuffer(1, len, A.sampleRate), d = b.getChannelData(0);
   for(let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
   DROP.noise = b;
@@ -1992,7 +1995,7 @@ function openDrop(){
   const vp = document.querySelector('meta[name=viewport]'); if(vp){ DROP.vp = vp.content; vp.content = 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover'; }
   let lastT = 0; m.addEventListener('touchend', e => { const now = Date.now(); if(now - lastT < 350 && !(e.target.closest && e.target.closest('input, button'))) e.preventDefault(); lastT = now; }, { passive:false });
   m.addEventListener('dblclick', e => e.preventDefault());
-  dropBind(); dropCtx();
+  dropBind(); dropAudioReset(); dropCtx();
 }
 function dropRedrawPads(){ document.querySelectorAll('.dpad').forEach(el => { el.querySelector('span').textContent = DPADS[DROP.kit][+el.dataset.i][0]; }); }
 function dropBind(){
@@ -2114,6 +2117,7 @@ function barToggle(){ const m = document.querySelector('#arcModal .mpc'); if(!m)
   if(!on && BAR.state === 'rec') barStop(true);
   BAR.prev = false; dropStopSeq(); DROP.rec = false; const r = $('#dRec'); if(r) r.classList.remove('on'); const p = $('#dPlay'); if(p) p.textContent = '▶ PLAY';
   if(on && BAR.take && BAR.take.sig !== barSig()) BAR.take = null;
+  if(!on) dropAudioReset();
   m.classList.toggle('barras', on); $('#dBarBtn').textContent = on ? '◼ PADS' : '🎤 BARRAS'; const cap = $('#dCap'); if(cap) cap.placeholder = on ? '@rival y comentario (opcional)' : 'Comentario (opcional)';
   if(on) barDraw(); dLcd(on ? 'Barras: rapea encima de tu beat' : 'Toca los pads'); }
 function barDraw(){ const el = $('#dBar'); if(!el) return; const t = BAR.take;
@@ -2154,6 +2158,7 @@ async function barStart(){
   catch(e){ barSession(); return toast('Sin permiso para el micro: actívalo en los ajustes del navegador', true); }
   if(A.state !== 'running'){ try{ await A.resume(); }catch(e){} }
   const tr = stream.getAudioTracks()[0], st = (tr && tr.getSettings) ? tr.getSettings() : {};
+  BAR.usedMic = true;
   Object.assign(BAR, { stream, state:'rec', sig:barSig(), recT:null, inLat:st.latency || 0, pcm:[], pcmT0:null, capN:null });
   barDraw(); dLcd('Preparado…');
   // 1) Captura sin comprimir con el reloj del beat
