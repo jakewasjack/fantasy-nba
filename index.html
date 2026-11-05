@@ -2045,12 +2045,16 @@ async function dropPost(){
   if(btn){ btn.textContent = '✓ SOLTADO'; btn.classList.add('on'); setTimeout(() => { btn.disabled = false; btn.textContent = 'SOLTAR ↗'; btn.classList.remove('on'); }, 2500); }
 }
 // --- BARRAS: voz encima del beat. Solo la voz es audio; el beat sigue siendo partitura y se sintetiza al escuchar ---
-const BFX = { limpia:'LIMPIA', tel:'TELÉFONO', vinilo:'VINILO' };
-const BAR = { hp:(() => { try{ return localStorage.getItem('barHp') !== '0'; }catch(e){ return true; } })(), state:'setup', take:null, fx:'limpia', vol:1, prev:false, cache:{} };
+// Sincronía: además de la grabación comprimida, se captura la voz sin comprimir con el reloj del beat (AudioWorklet)
+// y se compara la onda de las dos para saber en qué instante exacto empieza el archivo.
+const BFX = { limpia:'NORMAL', mega:'MEGÁFONO' };
+const BMODES = { cable:'🎧 CABLE', bt:'🎧 BLUETOOTH', sp:'🔈 ALTAVOZ' };
+const BAR = { mode:(() => { try{ const m = localStorage.getItem('barMode'); if(BMODES[m]) return m; return localStorage.getItem('barHp') === '0' ? 'sp' : 'cable'; }catch(e){ return 'cable'; } })(),
+  state:'setup', take:null, fx:'limpia', vol:1, prev:false, cache:{} };
 function barOn(){ const m = document.querySelector('#arcModal .mpc'); return !!(m && m.classList.contains('barras')); }
 function barSig(){ return DROP.kit + '|' + DROP.bpm + '|' + DROP.bars; }
-function barNudgeKey(){ return 'barNudge_' + (BAR.hp ? 'hp' : 'sp'); }
-function barGetNudge(){ try{ return +(localStorage.getItem(barNudgeKey()) || 0); }catch(e){ return 0; } }
+function barNudgeKey(){ return 'barNudge2_' + BAR.mode; }
+function barGetNudge(){ try{ const v = localStorage.getItem(barNudgeKey()); if(v != null) return +v; }catch(e){} return BAR.mode === 'bt' ? -180 : 0; }
 function barSetNudge(v){ try{ localStorage.setItem(barNudgeKey(), String(v)); }catch(e){} }
 function barOff(t){ return t.lag - t.lat + barGetNudge() / 1000; }   // segundos desde el 1 del beat hasta el inicio del archivo de voz
 function barSession(){ try{ if(navigator.audioSession) navigator.audioSession.type = 'playback'; }catch(e){} }
@@ -2059,26 +2063,53 @@ function barMime(){ if(!window.MediaRecorder) return null;
   return ''; }
 function barCurve(k){ const n = 1024, c = new Float32Array(n); for(let i = 0; i < n; i++){ const x = i / (n - 1) * 2 - 1; c[i] = Math.tanh(k * x) / Math.tanh(k); } return c; }
 function barIR(){ const A = DROP.ctx; if(BAR.ir && BAR.ir.sampleRate === A.sampleRate) return BAR.ir;
-  const len = Math.floor(A.sampleRate * 1.3), b = A.createBuffer(2, len, A.sampleRate);
-  for(let ch = 0; ch < 2; ch++){ const d = b.getChannelData(ch); for(let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2); }
+  const len = Math.floor(A.sampleRate * 1.1), b = A.createBuffer(2, len, A.sampleRate);
+  for(let ch = 0; ch < 2; ch++){ const d = b.getChannelData(ch); for(let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.5); }
   return BAR.ir = b; }
 function bq(type, f, gain, q){ const n = DROP.ctx.createBiquadFilter(); n.type = type; n.frequency.value = f; if(gain != null) n.gain.value = gain; if(q != null) n.Q.value = q; return n; }
-// Cadena de efectos de voz (no destructiva: se aplica al escuchar)
-function barChain(fx, vol){ const A = DROP.ctx, inp = A.createGain(), out = A.createGain(); out.gain.value = vol * 1.3;
+// Efectos (no destructivos: se aplican al escuchar). Los antiguos 'tel' y 'vinilo' suenan como megáfono y normal.
+function barChain(fx, vol){ const A = DROP.ctx, inp = A.createGain(), out = A.createGain();
   const comp = A.createDynamicsCompressor(); comp.threshold.value = -24; comp.ratio.value = 4; comp.knee.value = 8; comp.attack.value = .004; comp.release.value = .18;
-  let n = bq('highpass', fx === 'tel' ? 450 : 100); inp.connect(n);
-  if(fx === 'tel'){ const lp = bq('lowpass', 3000, null, .7), pk = bq('peaking', 1500, 5, 1), sh = A.createWaveShaper(); sh.curve = barCurve(3);
-    n.connect(lp); lp.connect(pk); pk.connect(sh); n = sh; }
-  else if(fx === 'vinilo'){ const lp = bq('lowpass', 6500), sh = A.createWaveShaper(); sh.curve = barCurve(1.6); n.connect(lp); lp.connect(sh); n = sh;
-    const d = A.createDelay(1), fb = A.createGain(), wet = A.createGain(); d.delayTime.value = .13; fb.gain.value = .28; wet.gain.value = .2;
-    n.connect(d); d.connect(fb); fb.connect(d); d.connect(wet); wet.connect(out); }
-  else { const pk = bq('peaking', 3500, 3, 1); n.connect(pk); n = pk;
-    const cv = A.createConvolver(), wet = A.createGain(); cv.buffer = barIR(); wet.gain.value = .16; n.connect(cv); cv.connect(wet); wet.connect(out); }
-  n.connect(comp); comp.connect(out); out.connect(DROP.out);
+  if(fx === 'mega' || fx === 'tel'){   // megáfono de manifestación: banda estrecha, bocina resonante, saturación dura y el rebote metálico del cono
+    out.gain.value = vol * .75;
+    const hp = bq('highpass', 650, null, .9), lp = bq('lowpass', 3300, null, 1.4), p1 = bq('peaking', 1700, 9, 2.2), p2 = bq('peaking', 2700, 6, 3);
+    const pre = A.createGain(), sh = A.createWaveShaper(), post = A.createGain(); pre.gain.value = 4; sh.curve = barCurve(9); sh.oversample = '2x'; post.gain.value = .55;
+    const d = A.createDelay(.2), fb = A.createGain(), wet = A.createGain(); d.delayTime.value = .022; fb.gain.value = .38; wet.gain.value = .32;
+    inp.connect(hp); hp.connect(p1); p1.connect(p2); p2.connect(pre); pre.connect(sh); sh.connect(lp); lp.connect(post);
+    post.connect(comp); post.connect(d); d.connect(fb); fb.connect(d); d.connect(wet); wet.connect(out); }
+  else {   // voz normal: limpia, con un toque de sala para que no suene pegada al móvil
+    out.gain.value = vol * 1.3;
+    const hp = bq('highpass', 100), pk = bq('peaking', 3500, 2.5, 1), cv = A.createConvolver(), wet = A.createGain(); cv.buffer = barIR(); wet.gain.value = .08;
+    inp.connect(hp); hp.connect(pk); pk.connect(comp); pk.connect(cv); cv.connect(wet); wet.connect(out); }
+  comp.connect(out); out.connect(DROP.out);
   return { inp, out }; }
 function barVoice(buf, t0, rel, fx, vol){ const A = DROP.ctx, src = A.createBufferSource(), ch = barChain(fx, vol); src.buffer = buf; src.connect(ch.inp);
   if(rel >= 0) src.start(t0 + rel); else if(-rel < buf.duration) src.start(t0, -rel); else return;
-  DROP.vsrc = src; DROP.vgain = ch.out; }
+  DROP.vsrc = src; DROP.vgain = ch.out; DROP.vfx = fx; }
+// Captura sin comprimir con marca de tiempo del reloj de audio
+async function barWorklet(A){ if(BAR.wl === A) return;
+  const code = `class C extends AudioWorkletProcessor{constructor(){super();this.on=true;this.b=new Float32Array(4096);this.n=0;this.t=0;this.port.onmessage=e=>{if(e.data==='stop'){this.flush();this.on=false;}};}
+    flush(){if(this.n){this.port.postMessage({t:this.t,d:this.b.slice(0,this.n)});this.n=0;}}
+    process(i){if(!this.on)return false;const x=i[0]&&i[0][0];if(x){if(this.n===0)this.t=currentTime;if(this.n+x.length>this.b.length){this.flush();this.t=currentTime;}this.b.set(x,this.n);this.n+=x.length;}return true;}}
+    registerProcessor('bar-cap',C);`;
+  const url = URL.createObjectURL(new Blob([code], { type:'application/javascript' }));
+  await A.audioWorklet.addModule(url); BAR.wl = A; }
+// Desplazamiento (en muestras) entre la captura sin comprimir P y el archivo decodificado R: R[j + k] ≈ P[j].
+// 1) Búsqueda gruesa con la envolvente completa (1 ms por punto, ±1,5 s alrededor de lo esperado): al usar toda la toma,
+//    un rap muy rítmico no confunde un tiempo con el siguiente. 2) Ajuste fino con la onda, muestra a muestra.
+function barAlign(P, R, sr, guess){
+  const h = Math.max(1, Math.round(sr / 1000));
+  const env = x => { const n = Math.floor(x.length / h), o = new Float32Array(n); let m = 0; for(let i = 0; i < n; i++){ let s = 0; for(let j = 0; j < h; j++) s += Math.abs(x[i * h + j]); o[i] = s / h; m += o[i]; } m /= (n || 1); for(let i = 0; i < n; i++) o[i] -= m; return o; };
+  const pe = env(P), re = env(R); if(pe.length < 300 || re.length < 300) return null;
+  let ep = 0, er = 0; for(const v of pe) ep += v * v; for(const v of re) er += v * v; if(!(ep > 0 && er > 0)) return null;
+  const g = Math.round(guess / h), K = 1500; let bk = g, best = -Infinity;
+  for(let k = g - K; k <= g + K; k++){ let sum = 0; const j0 = Math.max(0, -k), j1 = Math.min(pe.length, re.length - k); for(let j = j0; j < j1; j++) sum += pe[j] * re[j + k]; if(sum > best){ best = sum; bk = k; } }
+  if(best / Math.sqrt(ep * er) < .4) return null;
+  // Ajuste fino en el tramo con más voz (1 s)
+  const Wb = Math.min(1000, pe.length); let s0 = 0, bE = -1; for(let s = 0; s + Wb <= pe.length; s += 50){ let e = 0; for(let j = 0; j < Wb; j += 2) e += pe[s + j] * pe[s + j]; if(e > bE){ bE = e; s0 = s; } }
+  const S = s0 * h, Wf = Wb * h; let fk = bk * h, fb = -Infinity;
+  for(let k = bk * h - Math.round(1.5 * h); k <= bk * h + Math.round(1.5 * h); k++){ let sum = 0, ea = 0, eb = 0; for(let j = 0; j < Wf; j++){ const q = S + j + k; if(q < 0 || q >= R.length || S + j >= P.length) continue; const x = P[S + j], y = R[q]; sum += x * y; ea += x * x; eb += y * y; } const c = (ea > 0 && eb > 0) ? sum / Math.sqrt(ea * eb) : -1; if(c > fb){ fb = c; fk = k; } }
+  return fb > .3 ? fk : bk * h; }
 function barToggle(){ const m = document.querySelector('#arcModal .mpc'); if(!m) return; const on = !m.classList.contains('barras');
   if(on && !DROP.ev.length) return toast('Primero haz un beat: PLAY, REC y a los pads');
   if(!on && BAR.state === 'rec') barStop(true);
@@ -2089,23 +2120,25 @@ function barToggle(){ const m = document.querySelector('#arcModal .mpc'); if(!m)
 function barDraw(){ const el = $('#dBar'); if(!el) return; const t = BAR.take;
   if(BAR.state === 'rec'){ el.innerHTML = `<div class="dbar-txt">Rapea encima del beat. Son dos vueltas como máximo: si acabas en una, pulsa PARAR.</div><button class="mpc-btn rec on big" id="bStop">■ PARAR</button>`;
     $('#bStop').onclick = () => barStop(); return; }
-  if(!t){ el.innerHTML = `<div class="dbar-txt">Graba tus barras sobre este beat: un compás de cuenta atrás y hasta dos vueltas. Con una basta.</div>
-      <div class="mpc-row"><button class="mpc-btn ${BAR.hp ? 'on' : ''}" data-hp="1">🎧 CON CASCOS</button><button class="mpc-btn ${!BAR.hp ? 'on' : ''}" data-hp="0">🔈 SIN CASCOS</button></div>
-      <div class="dbar-txt">${BAR.hp ? 'Mejor calidad: el beat solo lo oyes tú.' : 'El beat sonará bajito y el móvil lo filtra del micro. La voz queda algo peor.'}</div>
+  if(BAR.state === 'proc'){ el.innerHTML = `<div class="dbar-txt">Cuadrando tu voz con el beat…</div>`; return; }
+  if(!t){ const tip = { cable:'Mejor calidad y sin retraso.', bt:'Los cascos Bluetooth van con retraso: aplico una corrección de partida que luego puedes afinar. Mientras grabas oirás el beat con calidad de llamada; lo que se publica suena bien.', sp:'El beat sonará bajito y el móvil lo filtra del micro. La voz queda algo peor.' }[BAR.mode];
+    el.innerHTML = `<div class="dbar-txt">Graba tus barras sobre este beat: un compás de cuenta atrás y hasta dos vueltas. Con una basta.</div>
+      <div class="mpc-row">${Object.entries(BMODES).map(([k, v]) => `<button class="mpc-btn ${BAR.mode === k ? 'on' : ''}" data-bm="${k}">${v}</button>`).join('')}</div>
+      <div class="dbar-txt">${tip}</div>
       <button class="mpc-btn rec big" id="bRec">● GRABAR BARRAS</button>`;
-    el.querySelectorAll('[data-hp]').forEach(b => b.onclick = () => { BAR.hp = b.dataset.hp === '1'; try{ localStorage.setItem('barHp', BAR.hp ? '1' : '0'); }catch(e){} barDraw(); });
+    el.querySelectorAll('[data-bm]').forEach(b => b.onclick = () => { BAR.mode = b.dataset.bm; try{ localStorage.setItem('barMode', BAR.mode); }catch(e){} barDraw(); });
     $('#bRec').onclick = barStart; return; }
   const nud = barGetNudge();
   el.innerHTML = `<div class="mpc-row"><button class="mpc-btn ${BAR.prev ? 'on' : ''}" id="bPlay">${BAR.prev ? '■ PARAR' : '▶ ESCUCHAR'}</button><button class="mpc-btn" id="bRedo">↺ REPETIR</button></div>
-    <div class="mpc-row">${Object.entries(BFX).map(([k, v]) => `<button class="mpc-btn ${BAR.fx === k ? 'on' : ''}" data-fx="${k}">${v}</button>`).join('')}</div>
+    <div class="mpc-row">${Object.entries(BFX).map(([k, v]) => `<button class="mpc-btn ${BAR.fx === k ? 'on' : ''}" data-fx="${k}">${k === 'mega' ? '📢 ' : ''}${v}</button>`).join('')}</div>
     <label class="mpc-feel"><span>VOZ</span><input type="range" id="bVol" min="0" max="150" value="${Math.round(BAR.vol * 100)}"><span>+</span></label>
-    <label class="mpc-feel"><span>ANTES</span><input type="range" id="bNud" min="-300" max="300" step="10" value="${nud}"><span>DESPUÉS</span></label>
+    <label class="mpc-feel"><span>ANTES</span><input type="range" id="bNud" min="-400" max="300" step="5" value="${nud}"><span>DESPUÉS</span></label>
     <div class="dbar-txt" id="bNudT"></div>`;
-  const nt = v => { $('#bNudT').textContent = `Tiempo de la voz: ${v > 0 ? '+' : ''}${v} ms. Si entra tarde respecto al beat, muévelo hacia ANTES. Se recuerda en este móvil.`; }; nt(nud);
+  const nt = v => { $('#bNudT').textContent = `Ajuste fino: ${v > 0 ? '+' : ''}${v} ms${t.auto ? '' : ' (no he podido medir la sincronía de esta toma: ajústala a oído)'}. Se recuerda en este móvil para ${BMODES[BAR.mode].replace(/^\S+ /, '').toLowerCase()}.`; }; nt(nud);
   $('#bPlay').onclick = barPreview;
   $('#bRedo').onclick = () => { BAR.prev = false; dropStopSeq(); BAR.take = null; barDraw(); dLcd('Otra toma'); };
   el.querySelectorAll('[data-fx]').forEach(b => b.onclick = () => { BAR.fx = b.dataset.fx; dLcd('Efecto: ' + BFX[BAR.fx]); barRestart(); barDraw(); });
-  $('#bVol').oninput = e => { BAR.vol = +e.target.value / 100; if(DROP.vgain) DROP.vgain.gain.value = BAR.vol * 1.3; };
+  $('#bVol').oninput = e => { BAR.vol = +e.target.value / 100; if(DROP.vgain) DROP.vgain.gain.value = BAR.vol * (DROP.vfx === 'mega' ? .75 : 1.3); };
   $('#bNud').oninput = e => nt(+e.target.value);
   $('#bNud').onchange = e => { barSetNudge(+e.target.value); barRestart(); }; }
 function barPreview(){ if(BAR.prev){ BAR.prev = false; dropStopSeq(); barDraw(); return; }
@@ -2118,40 +2151,56 @@ async function barStart(){
   const A = dropCtx(); BAR.prev = false; dropStopSeq(); DROP.rec = false;
   try{ if(navigator.audioSession) navigator.audioSession.type = 'play-and-record'; }catch(e){}
   let stream;
-  try{ stream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:!BAR.hp, noiseSuppression:false, autoGainControl:true, channelCount:1 } }); }
+  try{ stream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:BAR.mode === 'sp', noiseSuppression:false, autoGainControl:true, channelCount:1 } }); }
   catch(e){ barSession(); return toast('Sin permiso para el micro: actívalo en los ajustes del navegador', true); }
   if(A.state !== 'running'){ try{ await A.resume(); }catch(e){} }
+  const tr = stream.getAudioTracks()[0], st = (tr && tr.getSettings) ? tr.getSettings() : {};
+  Object.assign(BAR, { stream, state:'rec', sig:barSig(), recT:null, inLat:st.latency || 0, pcm:[], pcmT0:null, capN:null });
+  barDraw(); dLcd('Preparado…');
+  // 1) Captura sin comprimir con el reloj del beat
+  try{ await barWorklet(A); const src = A.createMediaStreamSource(stream), node = new AudioWorkletNode(A, 'bar-cap'), z = A.createGain(); z.gain.value = 0;
+    node.port.onmessage = e => { if(BAR.pcmT0 == null) BAR.pcmT0 = e.data.t; BAR.pcm.push(e.data.d); };
+    src.connect(node); node.connect(z); z.connect(A.destination); BAR.capN = { src, node, z };
+    for(let i = 0; i < 20 && BAR.pcmT0 == null; i++) await new Promise(r => setTimeout(r, 25)); }
+  catch(e){ BAR.capN = null; }
+  if(BAR.state !== 'rec' || BAR.stream !== stream) return;
+  // 2) Grabación comprimida (la que se sube)
   const mime = barMime(); let rec;
   try{ rec = new MediaRecorder(stream, Object.assign({ audioBitsPerSecond:48000 }, mime ? { mimeType:mime } : {})); }catch(e){ rec = new MediaRecorder(stream); }
   const chunks = []; rec.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
-  const tr = stream.getAudioTracks()[0], st = (tr && tr.getSettings) ? tr.getSettings() : {};
-  Object.assign(BAR, { stream, rec, chunks, state:'rec', sig:barSig(), recT:null, inLat:st.latency || 0 });
-  barDraw(); dLcd('Preparado…');
+  BAR.rec = rec; BAR.chunks = chunks;
   await new Promise(res => { rec.onstart = () => { if(BAR.recT == null) BAR.recT = A.currentTime; res(); }; rec.start(); setTimeout(res, 1500); });
   if(BAR.state !== 'rec' || BAR.rec !== rec) return;
   if(BAR.recT == null) BAR.recT = A.currentTime;
   const bl = dBeat(), L = dLoopBeats();
-  DROP.out.gain.value = BAR.hp ? .9 : .35;
+  DROP.out.gain.value = BAR.mode === 'sp' ? .35 : .9;
   dropPlay(DROP.ev, { loops:2, lead:4 * bl + .15, lcd:false, done:() => setTimeout(() => barStop(), 450) });
   const t0 = BAR.t0 = DROP.t0;
   for(let k = 0; k < 4; k++) dOsc('square', k === 0 ? 1500 : 1000, t0 - (4 - k) * bl, .05, .09, .03, DROP.comp);
   clearInterval(BAR.iv); BAR.iv = setInterval(() => { const r = A.currentTime - t0; dLcd(r < 0 ? 'Entras en ' + Math.ceil(-r / bl) + '…' : '● BARRAS · vuelta ' + Math.min(2, Math.floor(r / (L * bl)) + 1) + '/2'); }, 60);
   clearTimeout(BAR.cap); BAR.cap = setTimeout(() => barStop(), (4 * bl + 2 * L * bl + 2) * 1000); }
 function barStop(abort){
-  if(BAR.state !== 'rec') return; const A = DROP.ctx; BAR.state = 'setup';
+  if(BAR.state !== 'rec') return; const A = DROP.ctx;
   clearInterval(BAR.iv); clearTimeout(BAR.cap);
   const el = A.currentTime - (BAR.t0 || A.currentTime), L = dLoopBeats(), bl = dBeat(), loops = el > L * bl + .3 ? 2 : 1;
   dropStopSeq(); DROP.out.gain.value = .9;
-  const rec = BAR.rec, stream = BAR.stream, chunks = BAR.chunks, lat = (A.outputLatency || 0) + (A.baseLatency || 0) + (BAR.inLat || 0), lag = BAR.recT - BAR.t0, sig = BAR.sig;
-  BAR.rec = null; BAR.stream = null;
-  const fin = () => { try{ stream.getTracks().forEach(x => x.stop()); }catch(e){} barSession(); };
-  if(abort || !(el > .5)){ try{ rec.onstop = fin; rec.stop(); }catch(e){ fin(); } barDraw(); if(!abort) dLcd('Demasiado corto: vuelve a intentarlo'); return; }
-  dLcd('Procesando…'); barDraw();
-  rec.onstop = async () => { fin();
+  const rec = BAR.rec, stream = BAR.stream, chunks = BAR.chunks, capN = BAR.capN, sig = BAR.sig, t0 = BAR.t0, recT = BAR.recT;
+  const lat = (A.outputLatency || 0) + (A.baseLatency || 0) + (BAR.inLat || 0);
+  BAR.rec = null; BAR.stream = null; BAR.capN = null;
+  if(capN){ try{ capN.node.port.postMessage('stop'); }catch(e){} }
+  const fin = () => { try{ stream.getTracks().forEach(x => x.stop()); }catch(e){} if(capN){ try{ capN.src.disconnect(); capN.node.disconnect(); capN.z.disconnect(); }catch(e){} } barSession(); };
+  if(abort || !rec || !(el > .5)){ BAR.state = 'setup'; if(rec){ try{ rec.onstop = fin; rec.stop(); }catch(e){ fin(); } } else fin(); barDraw(); if(!abort) dLcd('Demasiado corto: vuelve a intentarlo'); return; }
+  BAR.state = 'proc'; dLcd('Procesando…'); barDraw();
+  rec.onstop = async () => { await new Promise(r => setTimeout(r, 120)); fin();
     const type = rec.mimeType || (chunks[0] && chunks[0].type) || 'audio/mp4', blob = new Blob(chunks, { type });
     try{ const buf = await new Promise((ok, ko) => { blob.arrayBuffer().then(ab => { const pr = A.decodeAudioData(ab, ok, ko); if(pr && pr.then) pr.then(ok, ko); }, ko); });
-      BAR.take = { blob, type, buf, lag, lat, loops, sig }; dLcd('Escucha tus barras'); barDraw(); barPreview(); }
-    catch(e){ dLcd('No se ha podido leer la grabación'); toast('No se ha podido procesar el audio de este móvil', true); barDraw(); } };
+      // Inicio real del archivo en el reloj del beat
+      let start = recT, auto = false;
+      if(BAR.pcm && BAR.pcm.length && BAR.pcmT0 != null){ const n = BAR.pcm.reduce((a, c) => a + c.length, 0), P = new Float32Array(n); let o = 0; BAR.pcm.forEach(c => { P.set(c, o); o += c.length; });
+        const k = barAlign(P, buf.getChannelData(0), A.sampleRate, (BAR.pcmT0 - recT) * A.sampleRate); if(k != null){ start = BAR.pcmT0 - k / A.sampleRate; auto = true; } }
+      BAR.pcm = null;
+      BAR.take = { blob, type, buf, lag:start - t0, lat, loops, sig, auto }; BAR.state = 'setup'; dLcd(auto ? 'Escucha tus barras' : 'Escucha y ajusta el tiempo a oído'); barDraw(); barPreview(); }
+    catch(e){ BAR.state = 'setup'; dLcd('No se ha podido leer la grabación'); toast('No se ha podido procesar el audio de este móvil', true); barDraw(); } };
   try{ rec.stop(); }catch(e){ rec.onstop(); } }
 function dropClose(){ dropStopSeq(); DROP.rec = false; arcClose(true); dropSleep();
   const vp = document.querySelector('meta[name=viewport]'); if(vp && DROP.vp){ vp.content = DROP.vp; DROP.vp = null; } }
@@ -2408,7 +2457,7 @@ function postHTML(p){
   const when = new Date(p.created_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}), d = p.data || {};
   const team = uid => esc(member(uid).team);
   if(p.kind === 'beat') return `<li id="post-${p.id}" style="align-items:flex-start">${avatar(p.user_id, 32)}<div class="grow"><div class="small muted"><b style="color:var(--text)">${team(p.user_id)}</b> · ${when}</div>
-    <div class="beatpost"><button class="sm" data-beat="${p.id}" onclick="beatPlay(${p.id})">▶ Escuchar</button><div><div class="name">${d.voice ? '🎤 Suelta barras' : '🎛️ Suelta un beat'}</div><div class="small muted">DROP · ${esc((DKITS[d.kit] || {}).name || d.kit)} · ${d.bpm} BPM · ${d.voice ? 'voz ' + esc((BFX[d.voice.fx] || 'limpia').toLowerCase()) : 'feel ' + Math.round((d.feel ?? .5) * 100) + ' %'}</div></div></div>
+    <div class="beatpost"><button class="sm" data-beat="${p.id}" onclick="beatPlay(${p.id})">▶ Escuchar</button><div><div class="name">${d.voice ? '🎤 Suelta barras' : '🎛️ Suelta un beat'}</div><div class="small muted">DROP · ${esc((DKITS[d.kit] || {}).name || d.kit)} · ${d.bpm} BPM · ${d.voice ? 'voz ' + esc((BFX[d.voice.fx] || (d.voice.fx === 'tel' ? 'megáfono' : 'normal')).toLowerCase()) : 'feel ' + Math.round((d.feel ?? .5) * 100) + ' %'}</div></div></div>
     ${p.body ? `<div style="overflow-wrap:anywhere;margin-top:4px">${mentHTML(p.body)}</div>` : ''}${rxBar('post', p.id)}${threadHTML(p)}</div></li>`;
   if(p.kind === 'msg'){ const forMe = (d.mentions || []).includes(S.user.id) && p.user_id !== S.user.id;
     return `<li id="post-${p.id}" class="${forMe ? 'ment-me' : ''}" style="align-items:flex-start">${avatar(p.user_id, 32)}<div class="grow"><div class="small muted"><b style="color:var(--text)">${team(p.user_id)}</b> · ${when}</div><div style="overflow-wrap:anywhere">${mentHTML(p.body)}</div>${rxBar('post', p.id)}${threadHTML(p)}</div></li>`; }
