@@ -143,6 +143,12 @@ html.droplock,html.droplock body{overflow:hidden;overscroll-behavior:none}
 .dpad.hit span{color:#1a1206}
 .mpc-feel{display:flex;align-items:center;gap:8px;font:700 10px ui-monospace,Menlo,monospace}
 .mpc-feel input{flex:1;margin:0;accent-color:#e8772e}
+.mpc.barras .dctl{display:none}
+.dbar{display:none;margin:6px 0}
+.mpc.barras .dbar{display:block}
+.dbar .mpc-btn.big{width:100%;padding:16px 10px;font-size:14px;margin:6px 0}
+.dbar-txt{font:600 11px/1.45 ui-monospace,Menlo,monospace;color:#3a3a3c;margin:6px 0}
+.dbar .mpc-feel{margin:10px 0}
 .mpc input#dCap{flex:1 1 140px;margin:0;font-size:16px;background:#efede7;color:#1d1d1f;border-color:#b5b2a9}
 .beatpost{display:flex;gap:10px;align-items:center;margin-top:4px}
 .thread{margin-top:4px}
@@ -1949,7 +1955,7 @@ function dropPlay(ev, opts = {}){ const A = dropCtx(); dropStopSeq();
   const tick = () => { if(!DROP.playing) return; const now = A.currentTime, ahead = now + .15, bl = dBeat(), L = dLoopBeats();
     while(DROP.t0 + DROP.next * bl < ahead){
       const b = DROP.next, loopN = Math.floor(b / L), inLoop = b - loopN * L;
-      if(DROP.maxLoops && loopN >= DROP.maxLoops){ dropStopSeq(); if(opts.done) opts.done(); return; }
+      if(DROP.maxLoops && loopN >= DROP.maxLoops){ dropStopSeq(DROP.t0 + DROP.maxLoops * L * bl); if(opts.done) opts.done(); return; }
       const sixteenth = Math.round(inLoop * 4);
       if(DROP.metro && DROP.rec && sixteenth % 4 === 0){ const t = DROP.t0 + b * bl; dOsc('square', sixteenth % 16 === 0 ? 1500 : 1000, t, .05, .06, .03, DROP.comp); }
       // Cada golpe va a su semicorchea; si se tocó un pelín antes del 1, pertenece al inicio del bucle (no al final)
@@ -1959,7 +1965,8 @@ function dropPlay(ev, opts = {}){ const A = dropCtx(); dropStopSeq();
     DROP.timer = setTimeout(tick, 25); };
   tick();
 }
-function dropStopSeq(){ DROP.playing = false; clearTimeout(DROP.timer); }
+function dropStopSeq(at){ DROP.playing = false; clearTimeout(DROP.timer);
+  if(DROP.vsrc){ try{ DROP.vsrc.stop(typeof at === 'number' ? at + .3 : 0); }catch(e){} DROP.vsrc = null; DROP.vgain = null; } }
 // --- Interfaz ---
 function openDrop(){
   arcClose(true);
@@ -1968,17 +1975,18 @@ function openDrop(){
     <div class="mpc-top"><div><div class="mpc-name">DROP</div><div class="mpc-sub">KWC for Dilla</div></div>
       <div class="mpc-lcd"><div id="dLcd1">${DKITS[DROP.kit].name} · ${DROP.bpm} BPM</div><div id="dLcd2">Toca los pads</div></div>
       <button class="mpc-x" onclick="dropClose()" aria-label="Cerrar">✕</button></div>
-    <div class="mpc-row">${Object.keys(DKITS).map(k => `<button class="mpc-btn ${k === DROP.kit ? 'on' : ''}" data-kit="${k}">${DKITS[k].name}</button>`).join('')}</div>
-    <div class="mpc-pads">${[12,13,14,15,8,9,10,11,4,5,6,7,0,1,2,3].map(i => `<div class="dpad" data-i="${i}"><span>${DPADS[DROP.kit][i][0]}</span></div>`).join('')}</div>
-    <div class="mpc-row">
+    <div class="mpc-row dctl">${Object.keys(DKITS).map(k => `<button class="mpc-btn ${k === DROP.kit ? 'on' : ''}" data-kit="${k}">${DKITS[k].name}</button>`).join('')}</div>
+    <div class="mpc-pads dctl">${[12,13,14,15,8,9,10,11,4,5,6,7,0,1,2,3].map(i => `<div class="dpad" data-i="${i}"><span>${DPADS[DROP.kit][i][0]}</span></div>`).join('')}</div>
+    <div class="mpc-row dctl">
       <button class="mpc-btn" id="dPlay">▶ PLAY</button><button class="mpc-btn rec ${DROP.rec ? 'on' : ''}" id="dRec">● REC</button>
       <button class="mpc-btn" id="dClr">BORRAR</button><button class="mpc-btn" id="dMet">${DROP.metro ? 'CLICK ON' : 'CLICK OFF'}</button></div>
-    <div class="mpc-row nowrap" style="align-items:center">
+    <div class="mpc-row nowrap dctl" style="align-items:center">
       <button class="mpc-btn sq" id="dBm">−</button><span class="mpc-val" id="dBpm">${DROP.bpm} BPM</span><button class="mpc-btn sq" id="dBp">+</button>
       <span style="margin-left:auto;display:flex;gap:4px;align-items:center"><span class="mpc-val" style="opacity:.6">COMP.</span>${[1,2,4].map(n => `<button class="mpc-btn sq ${DROP.bars === n ? 'on' : ''}" data-bars="${n}">${n}</button>`).join('')}</span></div>
-    <div class="mpc-row" style="align-items:center"><button class="mpc-btn ${DROP.feel === 0 ? 'on' : ''}" id="dSnap" style="flex:0 0 auto">${DROP.feel === 0 ? '⊞ AL COMPÁS' : '⊞ LIBRE'}</button>
+    <div class="mpc-row dctl" style="align-items:center"><button class="mpc-btn ${DROP.feel === 0 ? 'on' : ''}" id="dSnap" style="flex:0 0 auto">${DROP.feel === 0 ? '⊞ AL COMPÁS' : '⊞ LIBRE'}</button>
     <label class="mpc-feel" style="flex:1"><span>MPC</span><input type="range" id="dFeel" min="0" max="100" value="${Math.round(DROP.feel * 100)}"><span>DILLA</span></label></div>
-    <div class="mpc-row nowrap"><input id="dCap" maxlength="200" placeholder="Comentario (opcional)"><button class="mpc-btn post" id="dPost">SOLTAR ↗</button></div>
+    <div class="dbar" id="dBar"></div>
+    <div class="mpc-row nowrap"><input id="dCap" maxlength="200" placeholder="Comentario (opcional)"><button class="mpc-btn post" id="dBarBtn">🎤 BARRAS</button><button class="mpc-btn post" id="dPost">SOLTAR ↗</button></div>
   </div></div>`;
   document.body.appendChild(m); document.documentElement.classList.add('droplock');
   const vp = document.querySelector('meta[name=viewport]'); if(vp){ DROP.vp = vp.content; vp.content = 'width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover'; }
@@ -2011,21 +2019,144 @@ function dropBind(){
   $('#dSnap').onclick = () => { if(DROP.feel > 0){ DROP.lastFeel = DROP.feel; DROP.feel = 0; dLcd('Al compás: todo cuadra'); } else { DROP.feel = DROP.lastFeel || .5; dLcd('Libre: suena como lo tocas'); } snapUI(); };
   $('#dFeel').oninput = e => { DROP.feel = +e.target.value / 100; snapUI(); dLcd(DROP.feel > .85 ? 'Feel: puro Dilla' : DROP.feel < .15 ? 'Feel: cuantizado' : 'Feel: ' + Math.round(DROP.feel * 100) + ' %'); };
   $('#dPost').onclick = dropPost;
+  $('#dBarBtn').onclick = barToggle;
 }
 async function dropPost(){
   if(!DROP.ev.length) return toast('Graba algo antes de soltarlo: PLAY, REC y a los pads');
+  const inBar = barOn(), t = BAR.take;
+  if(inBar && BAR.state === 'rec') return;
+  if(inBar && !t) return toast('Graba tus barras antes de soltarlas, o vuelve a los pads con ◼ PADS');
+  if(inBar && t.sig !== barSig()) return toast('Has cambiado el beat: graba de nuevo las barras');
   const ev = DROP.ev.slice(0, 600).map(e => [e[0], e[1]]), body = mentEncode(($('#dCap')?.value || '').trim());
   const btn = $('#dPost'); if(btn){ if(btn.disabled) return; btn.disabled = true; btn.textContent = 'SOLTANDO…'; }
-  const { error } = await sb.rpc('post_beat', { p_league:S.league.id, p_body:body, p_data:{ kit:DROP.kit, bpm:DROP.bpm, bars:DROP.bars, feel:DROP.feel, ev } });
-  if(error){ if(btn){ btn.disabled = false; btn.textContent = 'SOLTAR ↗'; } dLcd('No se ha podido soltar'); return fail(error); }
+  let voice = null;
+  if(inBar){ dropStopSeq(); BAR.prev = false;
+    const base = (t.type || 'audio/mp4').split(';')[0], ext = base.includes('webm') ? 'webm' : base.includes('ogg') ? 'ogg' : 'm4a';
+    const path = `${S.league.id}/${S.user.id}/${Date.now()}.${ext}`;
+    const up = await sb.storage.from('barras').upload(path, t.blob, { contentType: base === 'audio/aac' ? 'audio/aac' : base, upsert:false });
+    if(up.error){ if(btn){ btn.disabled = false; btn.textContent = 'SOLTAR ↗'; } dLcd('No se han podido subir las barras'); return fail(up.error); }
+    voice = { path, fx:BAR.fx, vol:BAR.vol, off:Math.round(barOff(t) * 1000) / 1000, loops:t.loops, dur:Math.round(t.buf.duration * 10) / 10 }; }
+  const { error } = await sb.rpc('post_beat', { p_league:S.league.id, p_body:body, p_data:Object.assign({ kit:DROP.kit, bpm:DROP.bpm, bars:DROP.bars, feel:DROP.feel, ev }, voice ? { voice } : {}) });
+  if(error){ if(voice) sb.storage.from('barras').remove([voice.path]); if(btn){ btn.disabled = false; btn.textContent = 'SOLTAR ↗'; } dLcd('No se ha podido soltar'); return fail(error); }
   try{ navigator.vibrate && navigator.vibrate(60); }catch(e){}
-  dLcd('✓ Beat soltado en el Trash Talk'); toast('✓ Beat soltado en el Trash Talk: ya lo puede escuchar la liga'); const c = $('#dCap'); if(c) c.value = '';
+  const what = voice ? 'Barras soltadas' : 'Beat soltado';
+  dLcd('✓ ' + what + ' en el Trash Talk'); toast('✓ ' + what + ' en el Trash Talk: ya lo puede escuchar la liga'); const c = $('#dCap'); if(c) c.value = '';
+  if(voice){ BAR.take = null; barDraw(); }
   if(btn){ btn.textContent = '✓ SOLTADO'; btn.classList.add('on'); setTimeout(() => { btn.disabled = false; btn.textContent = 'SOLTAR ↗'; btn.classList.remove('on'); }, 2500); }
 }
+// --- BARRAS: voz encima del beat. Solo la voz es audio; el beat sigue siendo partitura y se sintetiza al escuchar ---
+const BFX = { limpia:'LIMPIA', tel:'TELÉFONO', vinilo:'VINILO' };
+const BAR = { hp:(() => { try{ return localStorage.getItem('barHp') !== '0'; }catch(e){ return true; } })(), state:'setup', take:null, fx:'limpia', vol:1, prev:false, cache:{} };
+function barOn(){ const m = document.querySelector('#arcModal .mpc'); return !!(m && m.classList.contains('barras')); }
+function barSig(){ return DROP.kit + '|' + DROP.bpm + '|' + DROP.bars; }
+function barNudgeKey(){ return 'barNudge_' + (BAR.hp ? 'hp' : 'sp'); }
+function barGetNudge(){ try{ return +(localStorage.getItem(barNudgeKey()) || 0); }catch(e){ return 0; } }
+function barSetNudge(v){ try{ localStorage.setItem(barNudgeKey(), String(v)); }catch(e){} }
+function barOff(t){ return t.lag - t.lat + barGetNudge() / 1000; }   // segundos desde el 1 del beat hasta el inicio del archivo de voz
+function barSession(){ try{ if(navigator.audioSession) navigator.audioSession.type = 'playback'; }catch(e){} }
+function barMime(){ if(!window.MediaRecorder) return null;
+  for(const m of ['audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/aac', 'audio/webm;codecs=opus', 'audio/webm']){ try{ if(MediaRecorder.isTypeSupported(m)) return m; }catch(e){} }
+  return ''; }
+function barCurve(k){ const n = 1024, c = new Float32Array(n); for(let i = 0; i < n; i++){ const x = i / (n - 1) * 2 - 1; c[i] = Math.tanh(k * x) / Math.tanh(k); } return c; }
+function barIR(){ const A = DROP.ctx; if(BAR.ir && BAR.ir.sampleRate === A.sampleRate) return BAR.ir;
+  const len = Math.floor(A.sampleRate * 1.3), b = A.createBuffer(2, len, A.sampleRate);
+  for(let ch = 0; ch < 2; ch++){ const d = b.getChannelData(ch); for(let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2); }
+  return BAR.ir = b; }
+function bq(type, f, gain, q){ const n = DROP.ctx.createBiquadFilter(); n.type = type; n.frequency.value = f; if(gain != null) n.gain.value = gain; if(q != null) n.Q.value = q; return n; }
+// Cadena de efectos de voz (no destructiva: se aplica al escuchar)
+function barChain(fx, vol){ const A = DROP.ctx, inp = A.createGain(), out = A.createGain(); out.gain.value = vol * 1.3;
+  const comp = A.createDynamicsCompressor(); comp.threshold.value = -24; comp.ratio.value = 4; comp.knee.value = 8; comp.attack.value = .004; comp.release.value = .18;
+  let n = bq('highpass', fx === 'tel' ? 450 : 100); inp.connect(n);
+  if(fx === 'tel'){ const lp = bq('lowpass', 3000, null, .7), pk = bq('peaking', 1500, 5, 1), sh = A.createWaveShaper(); sh.curve = barCurve(3);
+    n.connect(lp); lp.connect(pk); pk.connect(sh); n = sh; }
+  else if(fx === 'vinilo'){ const lp = bq('lowpass', 6500), sh = A.createWaveShaper(); sh.curve = barCurve(1.6); n.connect(lp); lp.connect(sh); n = sh;
+    const d = A.createDelay(1), fb = A.createGain(), wet = A.createGain(); d.delayTime.value = .13; fb.gain.value = .28; wet.gain.value = .2;
+    n.connect(d); d.connect(fb); fb.connect(d); d.connect(wet); wet.connect(out); }
+  else { const pk = bq('peaking', 3500, 3, 1); n.connect(pk); n = pk;
+    const cv = A.createConvolver(), wet = A.createGain(); cv.buffer = barIR(); wet.gain.value = .16; n.connect(cv); cv.connect(wet); wet.connect(out); }
+  n.connect(comp); comp.connect(out); out.connect(DROP.out);
+  return { inp, out }; }
+function barVoice(buf, t0, rel, fx, vol){ const A = DROP.ctx, src = A.createBufferSource(), ch = barChain(fx, vol); src.buffer = buf; src.connect(ch.inp);
+  if(rel >= 0) src.start(t0 + rel); else if(-rel < buf.duration) src.start(t0, -rel); else return;
+  DROP.vsrc = src; DROP.vgain = ch.out; }
+function barToggle(){ const m = document.querySelector('#arcModal .mpc'); if(!m) return; const on = !m.classList.contains('barras');
+  if(on && !DROP.ev.length) return toast('Primero haz un beat: PLAY, REC y a los pads');
+  if(!on && BAR.state === 'rec') barStop(true);
+  BAR.prev = false; dropStopSeq(); DROP.rec = false; const r = $('#dRec'); if(r) r.classList.remove('on'); const p = $('#dPlay'); if(p) p.textContent = '▶ PLAY';
+  if(on && BAR.take && BAR.take.sig !== barSig()) BAR.take = null;
+  m.classList.toggle('barras', on); $('#dBarBtn').textContent = on ? '◼ PADS' : '🎤 BARRAS'; const cap = $('#dCap'); if(cap) cap.placeholder = on ? '@rival y comentario (opcional)' : 'Comentario (opcional)';
+  if(on) barDraw(); dLcd(on ? 'Barras: rapea encima de tu beat' : 'Toca los pads'); }
+function barDraw(){ const el = $('#dBar'); if(!el) return; const t = BAR.take;
+  if(BAR.state === 'rec'){ el.innerHTML = `<div class="dbar-txt">Rapea encima del beat. Son dos vueltas como máximo: si acabas en una, pulsa PARAR.</div><button class="mpc-btn rec on big" id="bStop">■ PARAR</button>`;
+    $('#bStop').onclick = () => barStop(); return; }
+  if(!t){ el.innerHTML = `<div class="dbar-txt">Graba tus barras sobre este beat: un compás de cuenta atrás y hasta dos vueltas. Con una basta.</div>
+      <div class="mpc-row"><button class="mpc-btn ${BAR.hp ? 'on' : ''}" data-hp="1">🎧 CON CASCOS</button><button class="mpc-btn ${!BAR.hp ? 'on' : ''}" data-hp="0">🔈 SIN CASCOS</button></div>
+      <div class="dbar-txt">${BAR.hp ? 'Mejor calidad: el beat solo lo oyes tú.' : 'El beat sonará bajito y el móvil lo filtra del micro. La voz queda algo peor.'}</div>
+      <button class="mpc-btn rec big" id="bRec">● GRABAR BARRAS</button>`;
+    el.querySelectorAll('[data-hp]').forEach(b => b.onclick = () => { BAR.hp = b.dataset.hp === '1'; try{ localStorage.setItem('barHp', BAR.hp ? '1' : '0'); }catch(e){} barDraw(); });
+    $('#bRec').onclick = barStart; return; }
+  const nud = barGetNudge();
+  el.innerHTML = `<div class="mpc-row"><button class="mpc-btn ${BAR.prev ? 'on' : ''}" id="bPlay">${BAR.prev ? '■ PARAR' : '▶ ESCUCHAR'}</button><button class="mpc-btn" id="bRedo">↺ REPETIR</button></div>
+    <div class="mpc-row">${Object.entries(BFX).map(([k, v]) => `<button class="mpc-btn ${BAR.fx === k ? 'on' : ''}" data-fx="${k}">${v}</button>`).join('')}</div>
+    <label class="mpc-feel"><span>VOZ</span><input type="range" id="bVol" min="0" max="150" value="${Math.round(BAR.vol * 100)}"><span>+</span></label>
+    <label class="mpc-feel"><span>ANTES</span><input type="range" id="bNud" min="-300" max="300" step="10" value="${nud}"><span>DESPUÉS</span></label>
+    <div class="dbar-txt" id="bNudT"></div>`;
+  const nt = v => { $('#bNudT').textContent = `Tiempo de la voz: ${v > 0 ? '+' : ''}${v} ms. Si entra tarde respecto al beat, muévelo hacia ANTES. Se recuerda en este móvil.`; }; nt(nud);
+  $('#bPlay').onclick = barPreview;
+  $('#bRedo').onclick = () => { BAR.prev = false; dropStopSeq(); BAR.take = null; barDraw(); dLcd('Otra toma'); };
+  el.querySelectorAll('[data-fx]').forEach(b => b.onclick = () => { BAR.fx = b.dataset.fx; dLcd('Efecto: ' + BFX[BAR.fx]); barRestart(); barDraw(); });
+  $('#bVol').oninput = e => { BAR.vol = +e.target.value / 100; if(DROP.vgain) DROP.vgain.gain.value = BAR.vol * 1.3; };
+  $('#bNud').oninput = e => nt(+e.target.value);
+  $('#bNud').onchange = e => { barSetNudge(+e.target.value); barRestart(); }; }
+function barPreview(){ if(BAR.prev){ BAR.prev = false; dropStopSeq(); barDraw(); return; }
+  const t = BAR.take; if(!t) return; dropCtx(); BAR.prev = true;
+  dropPlay(DROP.ev, { loops:t.loops, lead:.2, lcd:false, done:() => { BAR.prev = false; setTimeout(() => { if(!BAR.prev) barDraw(); }, 400); } });
+  barVoice(t.buf, DROP.t0, barOff(t), BAR.fx, BAR.vol); barDraw(); }
+function barRestart(){ if(!BAR.prev) return; BAR.prev = false; dropStopSeq(); barPreview(); }
+async function barStart(){
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) return toast('Este navegador no deja grabar audio', true);
+  const A = dropCtx(); BAR.prev = false; dropStopSeq(); DROP.rec = false;
+  try{ if(navigator.audioSession) navigator.audioSession.type = 'play-and-record'; }catch(e){}
+  let stream;
+  try{ stream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:!BAR.hp, noiseSuppression:false, autoGainControl:true, channelCount:1 } }); }
+  catch(e){ barSession(); return toast('Sin permiso para el micro: actívalo en los ajustes del navegador', true); }
+  if(A.state !== 'running'){ try{ await A.resume(); }catch(e){} }
+  const mime = barMime(); let rec;
+  try{ rec = new MediaRecorder(stream, Object.assign({ audioBitsPerSecond:48000 }, mime ? { mimeType:mime } : {})); }catch(e){ rec = new MediaRecorder(stream); }
+  const chunks = []; rec.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
+  const tr = stream.getAudioTracks()[0], st = (tr && tr.getSettings) ? tr.getSettings() : {};
+  Object.assign(BAR, { stream, rec, chunks, state:'rec', sig:barSig(), recT:null, inLat:st.latency || 0 });
+  barDraw(); dLcd('Preparado…');
+  await new Promise(res => { rec.onstart = () => { if(BAR.recT == null) BAR.recT = A.currentTime; res(); }; rec.start(); setTimeout(res, 1500); });
+  if(BAR.state !== 'rec' || BAR.rec !== rec) return;
+  if(BAR.recT == null) BAR.recT = A.currentTime;
+  const bl = dBeat(), L = dLoopBeats();
+  DROP.out.gain.value = BAR.hp ? .9 : .35;
+  dropPlay(DROP.ev, { loops:2, lead:4 * bl + .15, lcd:false, done:() => setTimeout(() => barStop(), 450) });
+  const t0 = BAR.t0 = DROP.t0;
+  for(let k = 0; k < 4; k++) dOsc('square', k === 0 ? 1500 : 1000, t0 - (4 - k) * bl, .05, .09, .03, DROP.comp);
+  clearInterval(BAR.iv); BAR.iv = setInterval(() => { const r = A.currentTime - t0; dLcd(r < 0 ? 'Entras en ' + Math.ceil(-r / bl) + '…' : '● BARRAS · vuelta ' + Math.min(2, Math.floor(r / (L * bl)) + 1) + '/2'); }, 60);
+  clearTimeout(BAR.cap); BAR.cap = setTimeout(() => barStop(), (4 * bl + 2 * L * bl + 2) * 1000); }
+function barStop(abort){
+  if(BAR.state !== 'rec') return; const A = DROP.ctx; BAR.state = 'setup';
+  clearInterval(BAR.iv); clearTimeout(BAR.cap);
+  const el = A.currentTime - (BAR.t0 || A.currentTime), L = dLoopBeats(), bl = dBeat(), loops = el > L * bl + .3 ? 2 : 1;
+  dropStopSeq(); DROP.out.gain.value = .9;
+  const rec = BAR.rec, stream = BAR.stream, chunks = BAR.chunks, lat = (A.outputLatency || 0) + (A.baseLatency || 0) + (BAR.inLat || 0), lag = BAR.recT - BAR.t0, sig = BAR.sig;
+  BAR.rec = null; BAR.stream = null;
+  const fin = () => { try{ stream.getTracks().forEach(x => x.stop()); }catch(e){} barSession(); };
+  if(abort || !(el > .5)){ try{ rec.onstop = fin; rec.stop(); }catch(e){ fin(); } barDraw(); if(!abort) dLcd('Demasiado corto: vuelve a intentarlo'); return; }
+  dLcd('Procesando…'); barDraw();
+  rec.onstop = async () => { fin();
+    const type = rec.mimeType || (chunks[0] && chunks[0].type) || 'audio/mp4', blob = new Blob(chunks, { type });
+    try{ const buf = await new Promise((ok, ko) => { blob.arrayBuffer().then(ab => { const pr = A.decodeAudioData(ab, ok, ko); if(pr && pr.then) pr.then(ok, ko); }, ko); });
+      BAR.take = { blob, type, buf, lag, lat, loops, sig }; dLcd('Escucha tus barras'); barDraw(); barPreview(); }
+    catch(e){ dLcd('No se ha podido leer la grabación'); toast('No se ha podido procesar el audio de este móvil', true); barDraw(); } };
+  try{ rec.stop(); }catch(e){ rec.onstop(); } }
 function dropClose(){ dropStopSeq(); DROP.rec = false; arcClose(true); dropSleep();
   const vp = document.querySelector('meta[name=viewport]'); if(vp && DROP.vp){ vp.content = DROP.vp; DROP.vp = null; } }
 // Silencio total: para el bucle y duerme el audio (el crujido de vinilo incluido)
-function dropSleep(){ dropStopSeq(); DROP.rec = false; DROP.playingPost = null; document.querySelectorAll('[data-beat]').forEach(b => b.textContent = '▶ Escuchar');
+function dropSleep(){ if(BAR.state === 'rec') barStop(true); BAR.prev = false; dropStopSeq(); DROP.rec = false; DROP.playingPost = null; document.querySelectorAll('[data-beat]').forEach(b => b.textContent = '▶ Escuchar');
   const p = $('#dPlay'); if(p) p.textContent = '▶ PLAY'; const r = $('#dRec'); if(r) r.classList.remove('on');
   try { if(DROP.ctx && DROP.ctx.state === 'running') DROP.ctx.suspend(); } catch(e){} }
 document.addEventListener('visibilitychange', () => { if(document.hidden) dropSleep(); });
@@ -2040,8 +2171,16 @@ async function beatPlay(id){
   const A = dropCtx(); dropColor(); DROP.playingPost = id; if(btn) btn.textContent = '■ Parar';
   // Esperar a que el audio despierte del todo antes de arrancar (si no, el primer compás se pierde)
   if(A.state !== 'running'){ try{ await A.resume(); }catch(e){} }
+  let vbuf = null;
+  if(d.voice){ vbuf = BAR.cache[id];
+    if(!vbuf){ if(btn) btn.textContent = 'Cargando…';
+      try{ const r = await sb.storage.from('barras').download(d.voice.path); if(r.error || !r.data) throw r.error || new Error('sin datos');
+        const ab = await r.data.arrayBuffer(); vbuf = BAR.cache[id] = await new Promise((ok, ko) => { const pr = A.decodeAudioData(ab, ok, ko); if(pr && pr.then) pr.then(ok, ko); }); }
+      catch(e){ toast('No se han podido cargar las barras: suena solo el beat', true); vbuf = null; }
+      if(btn && DROP.playingPost === id) btn.textContent = '■ Parar'; } }
   if(DROP.playingPost !== id) return;
-  dropPlay(d.ev || [], { loops:2, lcd:false, lead:.3, done:() => { DROP.playingPost = null; if(btn) btn.textContent = '▶ Escuchar'; setTimeout(() => { if(!DROP.playing && !$('#arcModal')) dropSleep(); }, 2500); } });
+  dropPlay(d.ev || [], { loops:d.voice ? (d.voice.loops || 2) : 2, lcd:false, lead:.3, done:() => { DROP.playingPost = null; if(btn) btn.textContent = '▶ Escuchar'; setTimeout(() => { if(!DROP.playing && !$('#arcModal')) dropSleep(); }, 2500); } });
+  if(vbuf) barVoice(vbuf, DROP.t0, +d.voice.off || 0, d.voice.fx || 'limpia', d.voice.vol ?? 1);
 }
 
 function renderView(){
@@ -2269,7 +2408,7 @@ function postHTML(p){
   const when = new Date(p.created_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}), d = p.data || {};
   const team = uid => esc(member(uid).team);
   if(p.kind === 'beat') return `<li id="post-${p.id}" style="align-items:flex-start">${avatar(p.user_id, 32)}<div class="grow"><div class="small muted"><b style="color:var(--text)">${team(p.user_id)}</b> · ${when}</div>
-    <div class="beatpost"><button class="sm" data-beat="${p.id}" onclick="beatPlay(${p.id})">▶ Escuchar</button><div><div class="name">🎛️ Suelta un beat</div><div class="small muted">DROP · ${esc((DKITS[d.kit] || {}).name || d.kit)} · ${d.bpm} BPM · feel ${Math.round((d.feel ?? .5) * 100)} %</div></div></div>
+    <div class="beatpost"><button class="sm" data-beat="${p.id}" onclick="beatPlay(${p.id})">▶ Escuchar</button><div><div class="name">${d.voice ? '🎤 Suelta barras' : '🎛️ Suelta un beat'}</div><div class="small muted">DROP · ${esc((DKITS[d.kit] || {}).name || d.kit)} · ${d.bpm} BPM · ${d.voice ? 'voz ' + esc((BFX[d.voice.fx] || 'limpia').toLowerCase()) : 'feel ' + Math.round((d.feel ?? .5) * 100) + ' %'}</div></div></div>
     ${p.body ? `<div style="overflow-wrap:anywhere;margin-top:4px">${mentHTML(p.body)}</div>` : ''}${rxBar('post', p.id)}${threadHTML(p)}</div></li>`;
   if(p.kind === 'msg'){ const forMe = (d.mentions || []).includes(S.user.id) && p.user_id !== S.user.id;
     return `<li id="post-${p.id}" class="${forMe ? 'ment-me' : ''}" style="align-items:flex-start">${avatar(p.user_id, 32)}<div class="grow"><div class="small muted"><b style="color:var(--text)">${team(p.user_id)}</b> · ${when}</div><div style="overflow-wrap:anywhere">${mentHTML(p.body)}</div>${rxBar('post', p.id)}${threadHTML(p)}</div></li>`; }
