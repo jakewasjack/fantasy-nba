@@ -2070,16 +2070,15 @@ function bq(type, f, gain, q){ const n = DROP.ctx.createBiquadFilter(); n.type =
 // Efectos (no destructivos: se aplican al escuchar). Los antiguos 'tel' y 'vinilo' suenan como megáfono y normal.
 function barChain(fx, vol){ const A = DROP.ctx, inp = A.createGain(), out = A.createGain();
   const comp = A.createDynamicsCompressor(); comp.threshold.value = -24; comp.ratio.value = 4; comp.knee.value = 8; comp.attack.value = .004; comp.release.value = .18;
-  if(fx === 'mega' || fx === 'tel'){   // megáfono de manifestación: banda estrecha, bocina resonante, saturación dura y el rebote metálico del cono
-    out.gain.value = vol * .75;
-    const hp = bq('highpass', 650, null, .9), lp = bq('lowpass', 3300, null, 1.4), p1 = bq('peaking', 1700, 9, 2.2), p2 = bq('peaking', 2700, 6, 3);
-    const pre = A.createGain(), sh = A.createWaveShaper(), post = A.createGain(); pre.gain.value = 4; sh.curve = barCurve(9); sh.oversample = '2x'; post.gain.value = .55;
-    const d = A.createDelay(.2), fb = A.createGain(), wet = A.createGain(); d.delayTime.value = .022; fb.gain.value = .38; wet.gain.value = .32;
-    inp.connect(hp); hp.connect(p1); p1.connect(p2); p2.connect(pre); pre.connect(sh); sh.connect(lp); lp.connect(post);
-    post.connect(comp); post.connect(d); d.connect(fb); fb.connect(d); d.connect(wet); wet.connect(out); }
-  else {   // voz normal: limpia, con un toque de sala para que no suene pegada al móvil
+  if(fx === 'mega' || fx === 'tel'){   // megáfono limpio: voz mono con un corte suave de graves y agudos, un pelín de calor y reverb
+    out.gain.value = vol * 1.25;
+    const hp = bq('highpass', 280, null, .7), lp = bq('lowpass', 5200, null, .7), pre = A.createGain(), sh = A.createWaveShaper(), post = A.createGain();
+    pre.gain.value = 1.4; sh.curve = barCurve(1.4); post.gain.value = .8;
+    const cv = A.createConvolver(), wet = A.createGain(); cv.buffer = barIR(); wet.gain.value = .2;
+    inp.connect(hp); hp.connect(lp); lp.connect(pre); pre.connect(sh); sh.connect(post); post.connect(comp); post.connect(cv); cv.connect(wet); wet.connect(out); }
+  else {   // voz normal: limpia, con reverb de sala
     out.gain.value = vol * 1.3;
-    const hp = bq('highpass', 100), pk = bq('peaking', 3500, 2.5, 1), cv = A.createConvolver(), wet = A.createGain(); cv.buffer = barIR(); wet.gain.value = .08;
+    const hp = bq('highpass', 100), pk = bq('peaking', 3500, 2, 1), cv = A.createConvolver(), wet = A.createGain(); cv.buffer = barIR(); wet.gain.value = .17;
     inp.connect(hp); hp.connect(pk); pk.connect(comp); pk.connect(cv); cv.connect(wet); wet.connect(out); }
   comp.connect(out); out.connect(DROP.out);
   return { inp, out }; }
@@ -2138,7 +2137,7 @@ function barDraw(){ const el = $('#dBar'); if(!el) return; const t = BAR.take;
   $('#bPlay').onclick = barPreview;
   $('#bRedo').onclick = () => { BAR.prev = false; dropStopSeq(); BAR.take = null; barDraw(); dLcd('Otra toma'); };
   el.querySelectorAll('[data-fx]').forEach(b => b.onclick = () => { BAR.fx = b.dataset.fx; dLcd('Efecto: ' + BFX[BAR.fx]); barRestart(); barDraw(); });
-  $('#bVol').oninput = e => { BAR.vol = +e.target.value / 100; if(DROP.vgain) DROP.vgain.gain.value = BAR.vol * (DROP.vfx === 'mega' ? .75 : 1.3); };
+  $('#bVol').oninput = e => { BAR.vol = +e.target.value / 100; if(DROP.vgain) DROP.vgain.gain.value = BAR.vol * (DROP.vfx === 'mega' ? 1.25 : 1.3); };
   $('#bNud').oninput = e => nt(+e.target.value);
   $('#bNud').onchange = e => { barSetNudge(+e.target.value); barRestart(); }; }
 function barPreview(){ if(BAR.prev){ BAR.prev = false; dropStopSeq(); barDraw(); return; }
