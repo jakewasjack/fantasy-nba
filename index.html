@@ -1941,18 +1941,19 @@ function dQ(b, feel){ const g = Math.round(b * 4) / 4; return g + (b - g) * feel
 function dropHit(i, rec){ const A = dropCtx(), p = DPADS[DROP.kit][i]; if(!p) return; p[1](A.currentTime + .005);
   const el = document.querySelector(`.dpad[data-i="${i}"]`); if(el){ el.classList.add('hit'); setTimeout(() => el.classList.remove('hit'), 110); }
   dLcd(p[0]);
-  if(rec && DROP.rec && DROP.playing){ const tb = (A.currentTime - DROP.t0) / dBeat(), beat = tb % dLoopBeats(); DROP.ev.push([Math.round(beat * 1000) / 1000, i, Math.floor(tb / dLoopBeats())]); dLcd(p[0] + ' ● ' + DROP.ev.length); } }
+  if(rec && DROP.rec && DROP.playing){ const tb = (A.currentTime - DROP.t0) / dBeat(), lb = dLoopBeats(); let n = Math.floor(tb / lb); const beat = tb - n * lb; if(Math.round(beat * 4) / 4 >= lb) n++; DROP.ev.push([Math.round(beat * 1000) / 1000, i, n]); dLcd(p[0] + ' ● ' + DROP.ev.length); } }
 function dLcd(t){ const l = $('#dLcd2'); if(l) l.textContent = t; }
 // Secuenciador: bucle de N compases con programación anticipada
 function dropPlay(ev, opts = {}){ const A = dropCtx(); dropStopSeq();
-  DROP.playing = true; DROP.t0 = A.currentTime + .08; DROP.next = 0; DROP.loops = 0; DROP.seqEv = ev; DROP.maxLoops = opts.loops || 0;
+  DROP.playing = true; DROP.t0 = A.currentTime + (opts.lead || .12); DROP.next = 0; DROP.loops = 0; DROP.seqEv = ev; DROP.maxLoops = opts.loops || 0;
   const tick = () => { if(!DROP.playing) return; const now = A.currentTime, ahead = now + .15, bl = dBeat(), L = dLoopBeats();
     while(DROP.t0 + DROP.next * bl < ahead){
       const b = DROP.next, loopN = Math.floor(b / L), inLoop = b - loopN * L;
       if(DROP.maxLoops && loopN >= DROP.maxLoops){ dropStopSeq(); if(opts.done) opts.done(); return; }
       const sixteenth = Math.round(inLoop * 4);
       if(DROP.metro && DROP.rec && sixteenth % 4 === 0){ const t = DROP.t0 + b * bl; dOsc('square', sixteenth % 16 === 0 ? 1500 : 1000, t, .05, .06, .03, DROP.comp); }
-      (DROP.seqEv || ev).forEach(([eb, pi, rl]) => { if(rl === loopN) return; const qb = dQ(eb, DROP.feel); if(qb >= inLoop && qb < inLoop + .25){ const p = DPADS[DROP.kit][pi]; if(p) p[1](DROP.t0 + (loopN * L + qb) * bl); } });
+      // Cada golpe va a su semicorchea; si se tocó un pelín antes del 1, pertenece al inicio del bucle (no al final)
+      (DROP.seqEv || ev).forEach(([eb, pi, rl]) => { if(rl === loopN) return; let g = Math.round(eb * 4) / 4; const off = (eb - g) * DROP.feel; if(g >= L) g -= L; if(g >= inLoop && g < inLoop + .25){ const p = DPADS[DROP.kit][pi]; if(p) p[1](Math.max(A.currentTime, DROP.t0 + (loopN * L + g + off) * bl)); } });
       DROP.next += .25; }
     const bar = Math.floor(((now - DROP.t0) / bl % L) / 4) + 1, el = $('#dLcd1'); if(el && opts.lcd !== false) el.textContent = `${DKITS[DROP.kit].name} · ${DROP.bpm} BPM · ${DROP.rec ? '● REC' : '▶'} ${Math.max(1, bar)}/${DROP.bars}`;
     DROP.timer = setTimeout(tick, 25); };
@@ -2030,14 +2031,17 @@ function dropSleep(){ dropStopSeq(); DROP.rec = false; DROP.playingPost = null; 
 document.addEventListener('visibilitychange', () => { if(document.hidden) dropSleep(); });
 window.addEventListener('pagehide', () => dropSleep());
 // Escuchar un beat publicado en el muro (dos vueltas y para)
-function beatPlay(id){
+async function beatPlay(id){
   const p = (S.wallPosts || []).find(x => x.id === id); if(!p) return;
   const btn = document.querySelector(`[data-beat="${id}"]`);
   if(DROP.playing && DROP.playingPost === id){ dropSleep(); return; }
   document.querySelectorAll('[data-beat]').forEach(b => b.textContent = '▶ Escuchar');
   const d = p.data || {}; Object.assign(DROP, { kit:d.kit || 'lofi', bpm:d.bpm || 90, bars:d.bars || 2, feel:d.feel ?? .5, rec:false });
-  dropCtx(); dropColor(); DROP.playingPost = id; if(btn) btn.textContent = '■ Parar';
-  dropPlay(d.ev || [], { loops:2, lcd:false, done:() => { DROP.playingPost = null; if(btn) btn.textContent = '▶ Escuchar'; setTimeout(() => { if(!DROP.playing && !$('#arcModal')) dropSleep(); }, 2500); } });
+  const A = dropCtx(); dropColor(); DROP.playingPost = id; if(btn) btn.textContent = '■ Parar';
+  // Esperar a que el audio despierte del todo antes de arrancar (si no, el primer compás se pierde)
+  if(A.state !== 'running'){ try{ await A.resume(); }catch(e){} }
+  if(DROP.playingPost !== id) return;
+  dropPlay(d.ev || [], { loops:2, lcd:false, lead:.3, done:() => { DROP.playingPost = null; if(btn) btn.textContent = '▶ Escuchar'; setTimeout(() => { if(!DROP.playing && !$('#arcModal')) dropSleep(); }, 2500); } });
 }
 
 function renderView(){
