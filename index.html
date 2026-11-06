@@ -212,6 +212,129 @@ li.bd{display:block;background:var(--surface2);border:1px solid var(--line);bord
 .ta button:last-child{border-bottom:0}
 .savebar{position:fixed;left:0;right:0;bottom:0;z-index:15;display:flex;gap:12px;align-items:center;max-width:720px;margin:0 auto;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:var(--surface);border-top:2px solid var(--accent)}
 code{background:var(--surface2);padding:2px 6px;border-radius:6px;font-size:14px}
+
+@font-face{font-family:'Anton SC';font-style:normal;font-weight:400;font-display:swap;src:url(assets/fonts/anton-sc-latin-400-normal.woff2) format('woff2')}
+/* ================= SKIN v2 (Figma «KWC Fantasy NBA by Drafteados») =================
+   Tokens = variables de Figma (Primitives / Semantic / Layout). Solo con html.skin2 (?skin=v2). */
+html.skin2{
+  --greyscale-black100:#303030; --greyscale-black80:#595959; --greyscale-black60:#838383; --greyscale-black40:#ACACAC;
+  --greyscale-white100:#F4F4F4; --greyscale-whitefff:#FFFFFF;
+  --text-primary:#303030; --text-secondary:#838383; --text-inverse:#FFFFFF;
+  --bg-canvas:#F4F4F4; --bg-surface:#FFFFFF; --border-default:#ACACAC;
+  --accent-default:#F8B538; --accent-pressed:#E6A432; --accent-subtle:#FFF4E1; --accent-on:#594014; --accentlight-orange15:#FFF8EB;
+  --status-alert:#D64545;
+  --rankings-first50:#A9E5C3; --rankings-mid50:#FFE8C1; --rankings-last50:#F7B1B1;
+  --space-0:0px; --space-8:8px; --space-12:12px; --space-20:20px; --space-40:40px; --radius-md:10px;
+  --font-title:'Anton SC', Impact, 'Arial Narrow', sans-serif;
+  --font-body:-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro', system-ui, 'Segoe UI', Roboto, sans-serif;
+  /* Tokens antiguos re-mapeados para que el resto de pestañas pasen a claro */
+  --bg:var(--bg-canvas); --surface:var(--bg-surface); --surface2:var(--greyscale-white100); --line:var(--border-default);
+  --text:var(--text-primary); --muted:var(--text-secondary); --accent:var(--accent-default); --accent-ink:var(--text-primary);
+  --bad:var(--status-alert); --ok:#2E9E62;
+  color-scheme:light;
+}
+html.skin2, html.skin2 body{font-family:var(--font-body);background:var(--bg-canvas);color:var(--text-primary)}
+html.skin2 body{padding:0 var(--space-20) calc(32px + env(safe-area-inset-bottom))}
+html.skin2 .card{border-color:transparent}
+html.skin2 input, html.skin2 select{background:var(--bg-surface);border-color:var(--border-default);color:var(--text-primary)}
+html.skin2 button{color:var(--text-primary);font-weight:400}
+html.skin2 button:active{background:var(--accent-pressed)}
+html.skin2 button.ghost{background:var(--bg-surface);border-color:var(--border-default)}
+html.skin2 button.ghost:active, html.skin2 button.tg:active{background:var(--bg-canvas)}
+html.skin2 button:disabled{opacity:.4}
+html.skin2 button.sm{min-height:32px;padding:0 var(--space-12);font-size:12px;line-height:1.3;border-radius:var(--radius-md)}
+html.skin2 button.sm:not(.ghost):not(.lnk){background:var(--accent-default)}
+html.skin2 a{color:var(--accent-on)}
+html.skin2 .fcard{border-color:var(--accent-default);background:linear-gradient(160deg,var(--accent-subtle),var(--bg-surface) 60%)}
+html.skin2 .chron{border-color:transparent}
+html.skin2 .ment{color:var(--accent-on)} html.skin2 .ment.me{background:var(--accent-subtle)}
+/* Botón (componente Button: primary/secondary · L/S) */
+.b2{display:inline-flex;align-items:center;justify-content:center;height:40px;padding:0 var(--space-20);border-radius:var(--radius-md);background:var(--accent-default);color:var(--text-primary);border:0;font:400 14px/1.4 var(--font-body);white-space:nowrap}
+.b2:active{background:var(--accent-pressed)}
+.b2.sec{background:var(--bg-surface);border:1px solid var(--border-default)}
+.b2.sec:active{background:var(--bg-canvas)}
+.b2.s{height:32px;padding:0 var(--space-12);font-size:12px;line-height:1.3}
+.b2:disabled{opacity:.4}
+.brow{display:flex;justify-content:center;gap:20px;margin:16px 0 0}
+/* Cabecera + DeadlineBanner */
+.h2wrap{position:sticky;top:0;z-index:12;margin:0 calc(-1 * var(--space-20));background:var(--bg-surface)}
+.h2bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:calc(10px + env(safe-area-inset-top)) var(--space-20) 10px;background:var(--bg-surface)}
+.h2id{min-width:0}
+.h2team{font:400 24px/1 var(--font-title);color:var(--greyscale-black100);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.h2league{font:400 12px/1.3 var(--font-body);color:var(--greyscale-black60);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.h2act{display:flex;align-items:center;gap:22px;padding:0 3px;flex:none}
+.h2act button{background:none;border:0;padding:0;width:25px;height:25px;display:inline-flex;align-items:center;justify-content:center;position:relative;border-radius:0}
+.h2act button:active{background:none;opacity:.6}
+.h2act img{width:25px;height:25px;display:block}
+.h2av{border:1px solid var(--greyscale-black100) !important;border-radius:50% !important;overflow:hidden}
+.h2av img, .h2av span{width:25px !important;height:25px !important;font-size:9px !important}
+.h2act .bellN{top:-6px;right:-8px}
+.dlb{display:flex;justify-content:center;padding:var(--space-12) var(--space-20);background:var(--accent-subtle);color:var(--text-primary);cursor:pointer}
+.dlb.ready{background:var(--accent-default)}
+.dlb.missing{background:var(--status-alert);color:var(--text-inverse)}
+.dlb .row2{display:flex;gap:var(--space-8);align-items:baseline;white-space:nowrap}
+.dlb .l{font:400 14px/1.4 var(--font-body)}
+.dlb .c{font:700 16px/1 var(--font-body);font-variant-numeric:tabular-nums}
+.dlb .a{font:400 14px/1.4 var(--font-body);text-decoration:underline;text-underline-offset:2px}
+/* Menú burger */
+.h2menu{position:fixed;inset:0;z-index:60;background:rgba(48,48,48,.4);display:flex;justify-content:flex-end;animation:h2fade .15s ease-out}
+.h2panel{width:min(86vw,340px);height:100%;background:var(--bg-surface);padding:calc(14px + env(safe-area-inset-top)) var(--space-20) calc(20px + env(safe-area-inset-bottom));display:flex;flex-direction:column;overflow-y:auto;animation:h2slide .2s ease-out}
+.h2panel .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.h2panel .top .x{background:none;border:0;font-size:22px;line-height:1;padding:6px;color:var(--greyscale-black100)}
+.h2nav{display:flex;flex-direction:column}
+.h2nav button{display:flex;justify-content:space-between;align-items:center;background:none;border:0;border-bottom:1px solid var(--greyscale-white100);border-radius:0;padding:16px 0;font:400 24px/1 var(--font-title);color:var(--greyscale-black100);text-transform:uppercase;text-align:left}
+.h2nav button.on{color:var(--accent-on)}
+.h2nav button.on::after{content:'';width:8px;height:8px;border-radius:50%;background:var(--accent-default)}
+.h2nav button:active{background:var(--bg-canvas)}
+.h2sub{margin-top:20px;display:flex;flex-direction:column;gap:2px}
+.h2sub button{background:none;border:0;border-radius:0;padding:10px 0;text-align:left;font:400 14px/1.4 var(--font-body);color:var(--greyscale-black80)}
+@keyframes h2fade{from{opacity:0}} @keyframes h2slide{from{transform:translateX(30px);opacity:.6}}
+/* Home v2 */
+.t2{font:400 20px/1 var(--font-title);color:var(--greyscale-black100);margin:32px 0 16px;text-transform:uppercase;letter-spacing:0}
+.tag2{display:inline-flex;padding:4px 12px;font:700 12px/1.3 var(--font-body);background:var(--accent-default);color:var(--greyscale-black100)}
+.tag2.gen{background:var(--accent-on);color:var(--text-inverse)}
+.gt2{display:grid;grid-template-columns:1fr 1fr;gap:30px}
+.gt2 .col{display:flex;flex-direction:column;gap:12px;min-width:0;align-items:flex-start}
+.gt2 .rows{display:flex;flex-direction:column;gap:10px;width:100%}
+.fr2{display:flex;flex-direction:column;align-items:flex-start;min-width:0;max-width:100%;background:none;border:0;padding:0;border-radius:0;text-align:left}
+button.fr2:active{background:none;opacity:.7}
+.fr2 .n{max-width:100%;font:400 14px/1.4 var(--font-body);color:var(--greyscale-black100);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--rankings-mid50)}
+.fr2.r1 .n{background:var(--rankings-first50)} .fr2.rl .n{background:var(--rankings-last50)}
+.fr2 .m{display:flex;gap:4px;font:400 12px/1.3 var(--font-body);color:var(--greyscale-black60)}
+.fr2 .m b{color:var(--greyscale-black100)}
+.note2{font:400 12px/1.3 var(--font-body);color:var(--greyscale-black80);margin:16px 0 0}
+.note2 b{color:var(--greyscale-black80)}
+.tt2 .mchips{margin:0 0 10px}
+.tt2 .mchips .ment{background:var(--bg-surface);border:1px solid var(--border-default);color:var(--greyscale-black80);font-weight:400;padding:4px 12px}
+.tt2 form{display:flex;gap:12px;align-items:center}
+.tt2 form input{height:40px;margin:0;border-radius:12px;padding:10px;font-size:15px;letter-spacing:-.24px;background:var(--greyscale-whitefff);border:1px solid var(--greyscale-black40)}
+.tt2 form input::placeholder{color:var(--greyscale-black60)}
+.wallbox{position:relative;margin-top:12px}
+html.skin2 .wallbox .wall{max-height:415px;padding:0 6px}
+.wallbox.more::after{content:'';position:absolute;left:0;right:0;bottom:0;height:88px;pointer-events:none;background:linear-gradient(to bottom,rgba(244,244,244,0) 34.7%,var(--greyscale-white100) 65.6%)}
+.wallbox .cap{position:absolute;left:0;right:0;bottom:6px;z-index:1;text-align:center;font:400 12px/1.3 var(--font-body);color:var(--greyscale-black60);pointer-events:none}
+.wallbox.more .wall{padding-bottom:70px}
+html.skin2 .wall .list>li{padding:10px;gap:8px;border-bottom:1px solid var(--greyscale-whitefff)}
+html.skin2 .wall .list>li>img, html.skin2 .wall .list>li>span[aria-hidden]{border-radius:8px !important}
+html.skin2 .wall .small.muted{font-size:12px;line-height:1.3;color:var(--greyscale-black60);letter-spacing:-.078px}
+html.skin2 .wall .small.muted b{color:var(--greyscale-black100) !important}
+html.skin2 .wall .grow>div:not(.small):not(.rx):not(.thread):not(.beatpost){font-size:14px;line-height:1.4;color:var(--greyscale-black80)}
+html.skin2 .rx{padding:6px 0 0;margin-top:4px}
+html.skin2 .rx button{background:var(--accentlight-orange15);border:1px solid var(--accent-default);color:var(--greyscale-black80);font-weight:510;font-size:13px;line-height:16.9px;padding:3px 9px;letter-spacing:-.078px}
+html.skin2 .rx button.on{background:var(--rankings-mid50);color:var(--greyscale-black100)}
+html.skin2 .rx button.add{color:var(--greyscale-black40)}
+html.skin2 .wall .pill.accent{background:var(--greyscale-black100);border-color:var(--greyscale-black100);color:var(--greyscale-whitefff)}
+.mk2 .list>li{align-items:flex-start;gap:10px;padding:0 0 16px;margin-bottom:16px;border-bottom:1px solid var(--greyscale-whitefff)}
+.mk2 .list>li:last-child{margin-bottom:0}
+.mk2 .list>li>span:first-child{font-size:32px !important;line-height:42px;width:32px;flex:none}
+.mk2 .grow>div:first-child{font-size:15px;line-height:21px;letter-spacing:-.24px;color:var(--greyscale-black80)}
+.mk2 .grow .small{font-size:13px;line-height:18.2px;color:var(--greyscale-black60)}
+.nba2 .list>li{padding:10px 0;border-bottom:1px solid var(--greyscale-whitefff)}
+.nba2 .pill{background:var(--greyscale-black100);border-color:var(--greyscale-black100);color:var(--greyscale-black40);font-size:12px;line-height:16.8px;padding:2px 8px}
+.nba2 .grow>div:first-child{font-size:14px !important;line-height:1.4;color:var(--greyscale-black80)}
+.nba2 .grow .small{font-size:12px;line-height:1.3;color:var(--greyscale-black60)}
+.nba2 .grow .small b{font-weight:400;color:var(--greyscale-black80) !important}
+.nba2 .grow .small b.mine{font-weight:700;color:var(--accent-on) !important}
 </style>
 </head>
 <body>
@@ -224,6 +347,11 @@ const SUPABASE_URL = 'https://chobiypolwisbaeccsxw.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_-h8fYrI6w6VbDchcxPxXzA_cl6movfG';
 const SEASON = '2026-27';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// Capa visual v2: se activa con ?skin=v2 (se recuerda en este navegador) y se quita con ?skin=v1
+const V2 = (() => { let q = null; try{ q = new URLSearchParams(location.search).get('skin'); }catch(e){}
+  try{ if(q === 'v2') localStorage.setItem('skin', 'v2'); else if(q === 'v1') localStorage.removeItem('skin'); return localStorage.getItem('skin') === 'v2'; }catch(e){ return q === 'v2'; } })();
+if(V2){ document.documentElement.classList.add('skin2');
+  const tc = document.querySelector('meta[name=theme-color]'); if(tc) tc.content = '#ffffff'; }
 
 const AWARDS = [
   ['mvp','MVP'],['roy','Rookie del año'],['dpoy','Mejor defensor'],
@@ -432,6 +560,8 @@ function render(){
   if(S.tab !== 'hoy') stopTick();
   if(S.tab !== 'mercado' || !S.room) stopRoomPoll();
   if(S.view){ stopTick(); stopRoomPoll(); $('#app').innerHTML = '<main id="tab"></main>'; return renderView(); }
+  if(V2){ $('#app').innerHTML = header2(tabs) + '<main id="tab"></main>'; dlbPaint();
+    ({ draft:renderDraft, hoy:renderHome, equipo:renderTeam, mercado:renderMarket, pred:renderPred, liga:renderLiga })[S.tab](); return; }
   $('#app').innerHTML = `
     <div class="between" style="margin-top:14px">
       <div><div class="small muted">${esc(S.league.name)}</div><div class="name" style="font-size:18px">${esc(member(S.user.id).team)}</div></div>
@@ -662,6 +792,7 @@ async function loadTD(force){
     + [...tOut].reduce((a,id)=>a + (allPaid[id]||0), 0) - tIn.reduce((a,id)=>a + (allPaid[id]||0), 0);
   S.td = { league: lid, week, games, owner, paid, cost, reqs, live, mineLive, outs, ins: new Set(ins), roster, eff, sanc, adj, bal, res: rs.data || [], lineup: lu.data, prevLineup: lu.data ? null : ((plu.data || [])[0] || null), vouchers: pv.data || [], allPaid, trades, tradeLock, tIn: new Set(tIn),
     boosters: (bo.data || []).filter(x => x.status === 'available' || (week && x.used_week === week.week_no)) };
+  if(V2) setTimeout(dlbPaint, 0);
   return S.td;
 }
 const fmtLock = w => new Date(w.locks_at).toLocaleString('es-ES',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
@@ -2669,6 +2800,40 @@ function weekDetail(){
     ${x.total==null ? '<p class="small muted">Las alineaciones rivales se ven al cerrar la jornada.</p>' : lineupList(x)}
     ${x.league_pts!=null && x.rank ? `<p class="small muted" style="margin:6px 0 0">${d.closed ? 'Sumó' : 'Si acabara ahora suma'} +${x.league_pts} de liga</p>` : ''}</details>`; }).join('');
 }
+// ---------- Skin v2: cabecera, DeadlineBanner y menú burger ----------
+function header2(tabs){ S.tabs2 = tabs; const me = member(S.user.id);
+  return `<div class="h2wrap"><header class="h2bar"><div class="h2id"><div class="h2team">${esc(me.team)}</div><div class="h2league">${esc(S.league.name)}</div></div>
+    <div class="h2act"><button class="h2av" onclick="openView('perfil')" aria-label="Perfil y ajustes">${avatar(S.user.id, 25)}</button>
+      <button onclick="openView('notis')" aria-label="Notificaciones"><img src="assets/icon-bell.svg" alt=""><span id="bellN" class="bellN ${S.unread?'':'hidden'}">${S.unread > 9 ? '9+' : (S.unread || '')}</span></button>
+      <button onclick="menu2(true)" aria-label="Abrir menú" aria-haspopup="dialog"><img src="assets/icon-burger.svg" alt=""></button></div></header>
+    <div id="dlb"></div></div>`; }
+// Estados del componente DeadlineBanner: calm (falta más de un día), ready (último día), missing (sin alineación)
+function dlbPaint(){ const el = $('#dlb'); if(!el) return; const T = S.td, w = T && T.week;
+  if(!w || S.league.draft_status !== 'cerrado'){ el.innerHTML = ''; return; }
+  const ms = new Date(w.locks_at) - Date.now(), saved = !!T.lineup || !!T.prevLineup;
+  const st = !saved ? 'missing' : ms < 864e5 ? 'ready' : 'calm';
+  const cd = ms <= 0 ? 'cerrada' : st === 'calm' ? (Math.floor(ms / 864e5) + 'd ' + String(Math.floor(ms % 864e5 / 36e5)).padStart(2, '0') + 'h') : countdown(ms);
+  const lbl = st === 'missing' ? `J${w.week_no} · Sin alineación` : st === 'ready' ? `J${w.week_no} · Cierre de alineaciones` : `J${w.week_no} · Cierre ${fmtLock(w)}`;
+  el.innerHTML = `<div class="dlb ${st}" role="button" tabindex="0" onclick="goTab('equipo')"><div class="row2"><span class="l">${lbl}</span><span class="c" id="dlbC">${cd}</span><span class="a">${st === 'missing' ? 'Alinear' : 'Revisar'}</span></div></div>`;
+  clearInterval(S.dlbT); S.dlbT = setInterval(() => { if(!$('#dlbC')){ clearInterval(S.dlbT); return; } dlbPaint(); }, st === 'calm' ? 30000 : 1000); }
+function menu2(open){ const old = $('#h2m'); if(old) old.remove(); document.removeEventListener('keydown', menu2Esc); if(!open) return;
+  const tabs = S.tabs2 || [], m = document.createElement('div'); m.id = 'h2m'; m.className = 'h2menu'; m.setAttribute('role', 'dialog'); m.setAttribute('aria-label', 'Menú');
+  m.innerHTML = `<nav class="h2panel"><div class="top"><div class="h2league">${esc(S.league.name)}</div><button class="x" onclick="menu2(false)" aria-label="Cerrar menú">✕</button></div>
+    <div class="h2nav">${tabs.map(([k, t]) => `<button class="${S.tab === k && !S.view ? 'on' : ''}" onclick="menu2(false);S.view=null;goTab('${k}');window.scrollTo(0,0)">${t}</button>`).join('')}</div>
+    <div class="h2sub"><button onclick="menu2(false);openView('hemeroteca')">📰 The Chronicle · hemeroteca</button><button onclick="menu2(false);openView('reglas')">📘 Reglas y puntuación</button>
+      ${isComm() ? `<button onclick="menu2(false);openView('comi')">🛠️ Panel del comisionado</button>` : ''}<button onclick="menu2(false);openView('perfil')">👤 Perfil y ajustes</button></div></nav>`;
+  m.onclick = e => { if(e.target === m) menu2(false); };
+  document.body.appendChild(m); document.addEventListener('keydown', menu2Esc); }
+function menu2Esc(e){ if(e.key === 'Escape') menu2(false); }
+// GAME TIME!: clasificación de la jornada y general, lado a lado
+function gameTime2(){ const me = S.user.id;
+  const rk = (i, n) => i === 0 ? 'r1' : i === n - 1 ? 'rl' : 'rm';
+  const ws = S.liveWeek ? (S.ws || []).slice().sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99)) : [], closed = ws.some(x => x.detail?.closed), lt = S.lt || [];
+  const jCol = ws.length ? `<div class="col"><span class="tag2">J${S.wsWeek}: ${closed ? 'Final' : 'En juego'}</span><div class="rows">${ws.map((x, i) => `<button class="fr2 ${rk(i, ws.length)}" onclick="openJornada('box','${x.user_id}')"><span class="n">#${x.rank ?? i + 1} ${esc(x.team_name)}</span><span class="m"><b>${x.total == null ? 'oculto' : fmtP(x.total)}</b><span>${x.rank && x.league_pts != null ? '+' + x.league_pts + 'p' : ''}</span></span></button>`).join('')}</div></div>` : '';
+  const gCol = `<div class="col"><span class="tag2 gen">General</span><div class="rows">${lt.map((r, i) => `<div class="fr2 ${rk(i, lt.length)}"><span class="n">#${i + 1} ${esc(r.team_name)}</span><span class="m"><b>${r.league_pts}p</b><span>${fmtP(r.fantasy_total)}</span></span></div>`).join('') || '<span class="small muted">Empieza con la jornada 1</span>'}</div></div>`;
+  return `<h2 class="t2">Game Time!</h2><div class="gt2">${jCol || ''}${gCol}</div>
+    ${ws.length > 1 ? `<div class="brow"><button class="b2" onclick="openJornada('box')">Box score</button><button class="b2 sec" onclick="openJornada('h2h')">Cara a cara</button></div>` : ''}
+    ${ws.length && !closed ? `<p class="note2">Puntos <b>confirmados</b>${S.confUntil ? ' hasta el ' + new Date(S.confUntil + 'T12:00').toLocaleDateString('es-ES', { weekday:'long', day:'numeric' }) : ''}. Se actualizan una vez al día, por la mañana, cuando se carga el esfuerzo de los partidos de la noche anterior. Toca un equipo para ver su box score.</p>` : ''}`; }
 async function renderHome(){
   if(!S.td){ $('#tab').innerHTML = '<p class="muted">Cargando…</p>'; if(!await loadTD()) return; }
   const T = S.td, me = S.user.id, lid = S.league.id;
@@ -2692,7 +2857,28 @@ async function renderHome(){
     .filter(x => x.relevance >= 3 || x.player_ids.some(id => T.owner[id])).slice(0, 7);
   const lineupSaved = !!T.lineup || !!T.prevLineup;
   S.homeAt = Date.now();
-  $('#tab').innerHTML = `
+  const mkRows = `${rumorsHTML()}
+      ${Object.entries(rooms).map(([pid, ts]) => `<li><span>🤝</span><div class="grow"><div style="white-space:normal">${ts.map(t=>esc(member(t.user_id).team)).join(' y ')} negocian por ${pname(+pid)}</div><div class="small muted">Mesa abierta${ts.some(t=>t.user_id===me)?' · estás dentro':''}</div></div><button class="b2 s ${ts.some(t=>t.user_id===me)?'':'sec'}" onclick="openRoom(${pid})">Ver</button></li>`).join('')}
+      ${deals.map(t => `<li><span>✅</span><div class="grow"><div style="white-space:normal">Acuerdo: ${esc(member(t.user_id).team)} se queda a ${pname(t.player_in)}</div><div class="small muted">Se confirma al cierre de la jornada</div></div><button class="b2 s sec" onclick="openRoom(${t.player_in})">Ver</button></li>`).join('')}
+      ${tForMe.map(x => `<li><span>🔁</span><div class="grow"><div style="white-space:normal">${esc(member(x.from_user).team)} te ofrece un traspaso</div><div class="small muted">${tradeTerms(x)}</div></div><button class="b2 s" onclick="openTrade('${x.thread}')">Ver</button></li>`).join('')}
+      ${mineP ? `<li><span>📝</span><div class="grow"><div style="white-space:normal">Tienes ${mineP} ${mineP===1?'fichaje pendiente':'fichajes pendientes'}</div><div class="small muted">Nadie más lo sabe</div></div><button class="b2 s sec" onclick="goTab('mercado')">Ver</button></li>` : ''}
+      ${!Object.keys(rooms).length && !deals.length && !mineP && !tForMe.length && !(S.rum || []).length ? '<li class="muted">Sin movimientos todavía. El primero que fiche abre la veda.</li>' : ''}`;
+  if(V2){ $('#tab').innerHTML = `
+    ${finalCard(posts)}
+    ${gameTime2()}
+    ${chronicleCard()}
+    ${predOpen && preds < 6 ? `<div class="card between"><div><div class="name">Pedradas de temporada</div><div class="small muted">Llevas ${preds} de 6 · 3 puntos por acierto</div></div><button class="b2 s" onclick="goTab('pred')">Completar</button></div>` : ''}
+    <section class="tt2"><h2 class="t2">Trash Talk</h2>
+      ${mentChips()}<form id="wform"><input id="wmsg" maxlength="280" placeholder="Suelta algo a la liga…" value="${esc(draftMsg)}"><button class="b2" style="flex:none">Enviar</button></form>
+      <div class="wallbox ${posts.length > 4 ? 'more' : ''}"><div class="wall"><ul class="list">${posts.map(postHTML).join('') || '<li class="muted">El muro está vacío. Alguien tiene que tirar la primera piedra.</li>'}</ul></div>
+        ${posts.length > 4 ? `<div class="cap">Desliza dentro del muro para ver más · ${posts.length} mensajes</div>` : ''}</div></section>
+    <section class="mk2"><h2 class="t2">Mercado</h2><ul class="list">${mkRows}</ul>
+      <div class="brow"><button class="b2" onclick="goTab('mercado')">Ir al mercado</button><button class="b2 sec" onclick="goTab('equipo')">Ver mi plantilla</button></div></section>
+    <section class="nba2"><h2 class="t2">Movimientos NBA</h2><ul class="list">
+      ${news.map(x => `<li><span class="pill">${esc(x.team||'NBA')}</span><div class="grow"><div>${esc(txES(x.description))}</div>
+        <div class="small">${new Date(x.happened_at).toLocaleDateString('es-ES',{day:'numeric',month:'short'})}${x.tags.length ? ' · ' + x.tags.map(t => `<b class="${t.tag==='tuyo'?'mine':''}">${pname(t.id)}: ${t.tag}</b>`).join(' · ') : ''}</div></div></li>`).join('') || '<li class="muted">Sin movimientos relevantes.</li>'}
+    </ul></section>`; dlbPaint(); }
+  else $('#tab').innerHTML = `
     ${finalCard(posts)}
     ${T.week && S.liveWeek && new Date(T.week.locks_at) - Date.now() > 864e5 ? `<div class="clock mini wait" style="margin-top:12px">
       <div class="between" style="gap:10px"><div><div class="small muted">Cierre jornada ${T.week.week_no} · ${fmtLock(T.week)}</div>
