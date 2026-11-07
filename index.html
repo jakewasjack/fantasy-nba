@@ -879,7 +879,7 @@ function drawTeam(){
   const ready = luReady();
   const status = !T.week ? '' : L.dirty ? (L.saved || L.from ? 'Cambios sin guardar' : 'Propuesta sin guardar') : L.from ? `Se mantiene la de la jornada ${L.from}` : 'Guardada';
   const tot = L.starters.reduce((a,id)=>a+(T.games[S.byId[id]?.team]?.n||0),0);
-  $('#tab').innerHTML = `
+  $('#tab').innerHTML = `${negWarn()}
     <div class="card" style="margin-top:12px">
       <div class="between"><div class="name">${T.week ? 'Jornada ' + T.week.week_no : 'Temporada terminada'}</div><span class="pill ${L.dirty?'':'ok'}" style="white-space:nowrap">${status}</span></div>
       <div class="small muted">${T.week ? 'Se puede cambiar hasta ' + fmtLock(T.week) + ' (1 h antes del primer partido). Hasta entonces nadie ve la tuya.' : ''}</div>
@@ -969,7 +969,7 @@ function startSwap(id){ S.mk = { ...(S.mk||{}), out:id, inn:null, armed:null }; 
 function mkState(){ return S.mk || (S.mk = { q:'', team:'', pos:'', sort:'media', affordable:true, rookies:false, out:null, inn:null, armed:null }); }
 async function renderMarket(){
   if(S.league.draft_status !== 'cerrado'){ $('#tab').innerHTML = '<div class="clock wait">El mercado se abre al terminar el draft.</div>'; return; }
-  const M = mkState(); ['q','team','pos'].forEach(k => M[k] = M[k] || ''); if(!M.sort) M.sort = 'media'; if(M.affordable === undefined) M.affordable = true;
+  const M = mkState(); ['q','team','pos'].forEach(k => M[k] = M[k] || ''); if(!M.sort) M.sort = 'media'; if(M.affordable === undefined) M.affordable = false;
   if(!S.td){ $('#tab').innerHTML = '<p class="muted">Cargando…</p>'; if(!await loadTD()) return; }
   await Promise.all([loadIntel(), loadRumors()]);
   if(S.tab !== 'mercado') return;
@@ -977,6 +977,12 @@ async function renderMarket(){
   if(S.trade) return drawTrade();
   drawMarket();
 }
+// Saldo negativo: se puede fichar, pero hay que cuadrar antes del cierre
+function negWarn(){ const T = S.td; if(!T || !T.week || T.bal >= 0) return '';
+  const price = id => S.byId[id]?.price ?? 1;
+  const costly = T.mineLive.filter(t => ['pending','negotiating'].includes(t.status) && price(t.player_in) > (T.paid[t.player_out] || 0)).sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+  return `<div class="clock" style="background:var(--bad);color:#fff;margin-top:12px"><div style="font-weight:700">Saldo ${T.bal}M: cuadra antes del cierre</div>
+    <div class="small" style="font-weight:400;margin-top:4px">${costly.length ? `Si cierras en negativo, se anula${costly.length > 1 ? 'n, empezando por el último,' : ''} tu fichaje${costly.length > 1 ? 's' : ''} de ${costly.map(t => pname(t.player_in)).join(', ')}.` : 'Si cierras en negativo, se anulan tus últimos fichajes.'} Suelta a alguien caro por otro más barato o retira un fichaje. Cierre: ${fmtLock(T.week)}.</div></div>`; }
 function drawMarket(){
   const M = mkState(), T = S.td, me = S.user.id;
   if(!T.week){ $('#tab').innerHTML = '<div class="clock wait">La temporada ha terminado: mercado cerrado.</div>'; return; }
@@ -996,11 +1002,11 @@ function drawMarket(){
   const mineAll = T.reqs.filter(t => t.user_id === me && t.status !== 'withdrawn');
   const chooser = M.inn && !M.out;
   const rooms = Object.entries(reqBy).filter(([pid,ts]) => ts.length > 1 && !ts.some(t => t.user_id === me)).map(([pid,ts]) => [Number(pid), ts]);
-  $('#tab').innerHTML = `
+  $('#tab').innerHTML = `${negWarn()}
     <div class="card" style="margin-top:12px">
       <div class="between"><div class="name">Mercado · jornada ${T.week.week_no}</div><span class="pill">Saldo ${T.bal}M</span></div>
       <div class="small muted">Los cambios entran en la jornada ${T.week.week_no} y se confirman al cierre: ${fmtLock(T.week)}. Nadie ve lo que pides, salvo que otro equipo quiera al mismo jugador: entonces se abre la mesa de negociación${T.week.week_no >= 3 ? ` (solo hasta 24 h antes del cierre; después, se lo queda quien lo pidió primero)` : ''}.</div>
-      <div class="small" style="margin-top:8px"><b>Cada fichaje es un cambio:</b> sueltas a uno de los tuyos y recuperas lo que pagaste por él. Con tu saldo de ${T.bal}M ${M.out ? `y los ${T.paid[M.out]}M de ${pname(M.out)}` : 'y soltando a tu jugador más caro'} puedes fichar a alguien de hasta <b>${Math.max(maxPrice,0)}M</b>.</div>
+      <div class="small" style="margin-top:8px"><b>Cada fichaje es un cambio:</b> sueltas a uno de los tuyos y recuperas lo que pagaste por él. Con tu saldo de ${T.bal}M ${M.out ? `y los ${T.paid[M.out]}M de ${pname(M.out)}` : 'y soltando a tu jugador más caro'} puedes fichar sin quedar en negativo a alguien de hasta <b>${Math.max(maxPrice,0)}M</b>. Puedes pasarte, pero tendrás que cuadrar antes del cierre: si no, se anulan tus últimos fichajes.</div>
       ${(()=>{ const have = T.vouchers.filter(v=>v.holder===me&&!v.used_at), owe = T.vouchers.filter(v=>v.debtor===me&&!v.used_at); return have.length||owe.length ? `<div class="small" style="margin-top:8px"><b>Preferencias:</b> ${[...have.map(v=>'tienes una sobre '+esc(member(v.debtor).team)), ...owe.map(v=>'le debes una a '+esc(member(v.holder).team))].join(' · ')}</div>` : ''; })()}
     </div>
     ${mineAll.length ? `<h2>Mis fichajes</h2><ul class="list card" style="padding:0 14px">${mineAll.map(t=>`<li>
@@ -1014,12 +1020,12 @@ function drawMarket(){
         <button class="sm ghost" onclick="openRoom(${pid})">Ver la mesa</button></li>`).join('')}</ul>` : ''}
     ${chooser ? `
       <h2>¿Quién sale por ${pname(M.inn)}? <span class="small muted">· cuesta ${price(M.inn)}M</span></h2>
-      <p class="small muted">Elige a quién sueltas. Arriba, los que te dan presupuesto suficiente.</p>
+      <p class="small muted">Elige a quién sueltas. Arriba, los que no te dejan en negativo.</p>
       <ul class="list card" style="padding:0 14px">${canOut.slice().sort((a,b)=>{ const oa = T.bal+(T.paid[a]||0)-price(M.inn)>=0, ob = T.bal+(T.paid[b]||0)-price(M.inn)>=0; return (ob-oa) || (S.byId[a]?.fp??-1)-(S.byId[b]?.fp??-1); }).map(id=>{ const ok = T.bal + (T.paid[id]||0) - price(M.inn) >= 0; return `<li>
-        <div class="grow"><div class="name">${pname(id)}${injIcon(id)}</div><div class="small muted">${posBadge(posOf(id),1)} recuperas ${T.paid[id]}M${S.byId[id]?.fp!=null?' · '+Number(S.byId[id].fp).toFixed(1)+' FPPG':''}${ok?'':' · <span style="color:var(--bad)">te faltarían '+(price(M.inn)-T.bal-(T.paid[id]||0))+'M</span>'}</div></div>
-        <button class="sm" ${ok?'':'disabled'} onclick="mkConfirm(${id},${M.inn})">${M.armed===id?'Confirmar':'Sale'}</button></li>`}).join('')}</ul>
+        <div class="grow"><div class="name">${pname(id)}${injIcon(id)}</div><div class="small muted">${posBadge(posOf(id),1)} recuperas ${T.paid[id]}M${S.byId[id]?.fp!=null?' · '+Number(S.byId[id].fp).toFixed(1)+' FPPG':''}${ok?'':' · <span style="color:var(--bad)">quedarías en '+(T.bal+(T.paid[id]||0)-price(M.inn))+'M</span>'}</div></div>
+        <button class="sm ${ok?'':'ghost'}" onclick="mkConfirm(${id},${M.inn})">${M.armed===id?'Confirmar':'Sale'}</button></li>`}).join('')}</ul>
       <button class="ghost" style="width:100%" onclick="mkReset()">Cancelar</button>` : `
-    ${M.out ? `<div class="clock">Buscas sustituto para ${pname(M.out)} · recuperas ${T.paid[M.out]}M · puedes pagar hasta ${maxPrice}M <a href="#" onclick="mkReset();return false" style="color:inherit;margin-left:6px">Cancelar</a></div>` : ''}
+    ${M.out ? `<div class="clock">Buscas sustituto para ${pname(M.out)} · recuperas ${T.paid[M.out]}M · sin quedar en negativo, hasta ${maxPrice}M <a href="#" onclick="mkReset();return false" style="color:inherit;margin-left:6px">Cancelar</a></div>` : ''}
     ${(S.rum || []).length ? `<h2>Rumores de mercado</h2><ul class="list card" style="padding:0 14px">${rumorsHTML()}</ul>` : ''}
     ${tradesMine()}
     <div class="seg" role="tablist" style="margin-top:18px"><button class="${M.mode!=='rivales'?'on':''}" onclick="mkState().mode='libres';drawMarket()">Agentes libres</button><button class="${M.mode==='rivales'?'on':''}" onclick="mkState().mode='rivales';drawMarket()">Otras plantillas</button></div>
@@ -1032,7 +1038,7 @@ function drawMarket(){
       <select id="mpos" aria-label="Posición" style="max-width:130px"><option value="">Posición</option><option value="G" ${M.pos==='G'?'selected':''}>Exterior (G)</option><option value="F" ${M.pos==='F'?'selected':''}>Alero (F)</option><option value="C" ${M.pos==='C'?'selected':''}>Pívot (C)</option></select>
     </div>
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px">
-      <label class="small muted"><input type="checkbox" id="maf" ${M.affordable?'checked':''} style="width:auto;margin:0 6px 0 0">Solo los que puedo pagar (≤ ${Math.max(maxPrice,0)}M)</label>
+      <label class="small muted"><input type="checkbox" id="maf" ${M.affordable?'checked':''} style="width:auto;margin:0 6px 0 0">Solo los que no me dejan en negativo (≤ ${Math.max(maxPrice,0)}M)</label>
       <label class="small muted"><input type="checkbox" id="mrk" ${M.rookies?'checked':''} style="width:auto;margin:0 6px 0 0">Solo rookies</label>
     </div>
     <p class="small muted" style="margin:0 0 4px">${all.length} libres${all.length>80?' · se muestran 80':''}</p>
@@ -1045,7 +1051,8 @@ function drawMarket(){
           ${injLine(p.id)}${formLine(p.id)}
           ${others.length ? `<div class="small" style="color:var(--accent)">En disputa entre ${others.map(t=>esc(member(t.user_id).team)).join(' y ')} · <a href="#" onclick="openRoom(${p.id});return false" style="color:inherit">ver la mesa</a></div>` : ''}
           ${rsv ? `<div class="small" style="color:${blocked?'var(--bad)':'var(--ok)'}">${blocked ? 'Reservado esta jornada para ' + esc(member(rsv).team) : 'Reservado para ti esta jornada'}</div>` : ''}</div>
-        <button class="sm" ${blocked || p.price > maxPrice ? 'disabled' : ''} onclick="mkPick(${p.id})">${M.out && M.armed===p.id ? 'Confirmar' : 'Fichar'}</button>
+          ${!blocked && p.price > maxPrice ? `<div class="small" style="color:var(--bad)">Te deja en negativo: tendrás que cuadrar antes del cierre</div>` : ''}
+        <button class="sm" ${blocked ? 'disabled' : ''} onclick="mkPick(${p.id})">${M.out && M.armed===p.id ? 'Confirmar' : 'Fichar'}</button>
       </li>`}).join('') || '<li class="muted">Nadie con ese filtro</li>'}
     </ul>`}`}`;
   if(chooser || M.mode === 'rivales') return;
@@ -2440,7 +2447,7 @@ function viewRules(){
       <p><b>Quinteto Drafteados</b> (cada lunes): +1M de saldo por cada jugador del quinteto que tuvieras alineado. <b>Rookie del mes</b>: 🌟 uno de tus rookies puntúa ×2 una jornada. <b>Mánager del mes</b>: 🏅 mención. <b>Pupas del mes</b>: 🏅 mención y +1M. <b>Copa NBA</b>: ⚡ segundo capitán y millones. <b>All-Star</b>: 🛡️ banquillo al 50 % una jornada y millones. <b>Pedradas</b>: ventaja para el draft de la temporada siguiente.</p></div>
     <h2>Mercado</h2>
     <div class="card small">
-      <p><b>Agentes libres.</b> Cada fichaje es un cambio uno por uno: sueltas a uno de los tuyos y recuperas lo que pagaste. Precios fijos toda la temporada, sin límite de cambios, y el saldo no puede quedar negativo.</p>
+      <p><b>Agentes libres.</b> Cada fichaje es un cambio uno por uno: sueltas a uno de los tuyos y recuperas lo que pagaste. Precios fijos toda la temporada y sin límite de cambios. Puedes fichar aunque el saldo quede en negativo, pero tienes que cuadrarlo antes del cierre: si cierras en negativo, se anulan tus fichajes pendientes empezando por el último (y si estabas en una mesa, sales de ella).</p>
       <p><b>Tus peticiones son secretas.</b> Si otro equipo pide al mismo jugador, se abre una mesa de negociación que toda la liga puede mirar.</p>
       <p><b>En la mesa</b> uno se queda al jugador y el otro se retira, a cambio de nada, de 1 a 3 millones, de una preferencia para la próxima colisión o de la reserva del jugador que se suelta. Tres ofertas por equipo.</p>
       <p><b>Sin acuerdo al cierre:</b> jugador congelado y reservado la jornada siguiente para quien lo pidió primero. Desde la jornada 3, la sanción es asimétrica: 1M para quien lo pidió primero y 3M para el segundo. Si te quedas en negativo, tienes la jornada siguiente para rehacer la plantilla: hasta volver a 0 solo puedes hacer cambios que te devuelvan saldo.</p>
@@ -2811,10 +2818,10 @@ function header2(tabs){ S.tabs2 = tabs; const me = member(S.user.id);
 function dlbPaint(){ const el = $('#dlb'); if(!el) return; const T = S.td, w = T && T.week;
   if(!w || S.league.draft_status !== 'cerrado'){ el.innerHTML = ''; return; }
   const ms = new Date(w.locks_at) - Date.now(), saved = !!T.lineup || !!T.prevLineup;
-  const st = !saved ? 'missing' : ms < 864e5 ? 'ready' : 'calm';
+  const neg = T.bal < 0, st = !saved || neg ? 'missing' : ms < 864e5 ? 'ready' : 'calm';
   const cd = ms <= 0 ? 'cerrada' : st === 'calm' ? (Math.floor(ms / 864e5) + 'd ' + String(Math.floor(ms % 864e5 / 36e5)).padStart(2, '0') + 'h') : countdown(ms);
-  const lbl = st === 'missing' ? `J${w.week_no} · Sin alineación` : st === 'ready' ? `J${w.week_no} · Cierre de alineaciones` : `J${w.week_no} · Cierre ${fmtLock(w)}`;
-  el.innerHTML = `<div class="dlb ${st}" role="button" tabindex="0" onclick="goTab('equipo')"><div class="row2"><span class="l">${lbl}</span><span class="c" id="dlbC">${cd}</span><span class="a">${st === 'missing' ? 'Alinear' : 'Revisar'}</span></div></div>`;
+  const lbl = neg ? `J${w.week_no} · Saldo ${T.bal}M` : st === 'missing' ? `J${w.week_no} · Sin alineación` : st === 'ready' ? `J${w.week_no} · Cierre de alineaciones` : `J${w.week_no} · Cierre ${fmtLock(w)}`;
+  el.innerHTML = `<div class="dlb ${st}" role="button" tabindex="0" onclick="goTab('${neg ? 'mercado' : 'equipo'}')"><div class="row2"><span class="l">${lbl}</span><span class="c" id="dlbC">${cd}</span><span class="a">${neg ? 'Cuadrar' : st === 'missing' ? 'Alinear' : 'Revisar'}</span></div></div>`;
   clearInterval(S.dlbT); S.dlbT = setInterval(() => { if(!$('#dlbC')){ clearInterval(S.dlbT); return; } dlbPaint(); }, st === 'calm' ? 30000 : 1000); }
 function menu2(open){ const old = $('#h2m'); if(old) old.remove(); document.removeEventListener('keydown', menu2Esc); if(!open) return;
   const tabs = S.tabs2 || [], m = document.createElement('div'); m.id = 'h2m'; m.className = 'h2menu'; m.setAttribute('role', 'dialog'); m.setAttribute('aria-label', 'Menú');
@@ -2864,7 +2871,7 @@ async function renderHome(){
       ${mineP ? `<li><span>📝</span><div class="grow"><div style="white-space:normal">Tienes ${mineP} ${mineP===1?'fichaje pendiente':'fichajes pendientes'}</div><div class="small muted">Nadie más lo sabe</div></div><button class="b2 s sec" onclick="goTab('mercado')">Ver</button></li>` : ''}
       ${!Object.keys(rooms).length && !deals.length && !mineP && !tForMe.length && !(S.rum || []).length ? '<li class="muted">Sin movimientos todavía. El primero que fiche abre la veda.</li>' : ''}`;
   if(V2){ $('#tab').innerHTML = `
-    ${finalCard(posts)}
+    ${negWarn()}${finalCard(posts)}
     ${gameTime2()}
     ${chronicleCard()}
     ${predOpen && preds < 6 ? `<div class="card between"><div><div class="name">Pedradas de temporada</div><div class="small muted">Llevas ${preds} de 6 · 3 puntos por acierto</div></div><button class="b2 s" onclick="goTab('pred')">Completar</button></div>` : ''}
@@ -2879,7 +2886,7 @@ async function renderHome(){
         <div class="small">${new Date(x.happened_at).toLocaleDateString('es-ES',{day:'numeric',month:'short'})}${x.tags.length ? ' · ' + x.tags.map(t => `<b class="${t.tag==='tuyo'?'mine':''}">${pname(t.id)}: ${t.tag}</b>`).join(' · ') : ''}</div></div></li>`).join('') || '<li class="muted">Sin movimientos relevantes.</li>'}
     </ul></section>`; dlbPaint(); }
   else $('#tab').innerHTML = `
-    ${finalCard(posts)}
+    ${negWarn()}${finalCard(posts)}
     ${T.week && S.liveWeek && new Date(T.week.locks_at) - Date.now() > 864e5 ? `<div class="clock mini wait" style="margin-top:12px">
       <div class="between" style="gap:10px"><div><div class="small muted">Cierre jornada ${T.week.week_no} · ${fmtLock(T.week)}</div>
         <div class="cdl">faltan <span id="cd">${countdown(new Date(T.week.locks_at) - Date.now())}</span></div></div>
