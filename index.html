@@ -866,6 +866,17 @@ function adaptLineup(src, ids){
   bn.forEach((x, i) => { if(!ids.includes(x) && free.length) bn[i] = free.shift(); });
   return { starters: st.filter(id => ids.includes(id)), bench: bn.filter(id => ids.includes(id)).concat(free), c, vc };
 }
+// Valor de la plantilla y saldo (incluye los fichajes pendientes de la jornada abierta)
+function teamMoney(){ const T = S.td; if(!T) return '';
+  const value = (T.eff || []).reduce((a, id) => a + (T.cost[id] || 0), 0);
+  const canOut = T.roster.filter(id => !T.outs.has(id) && !(T.tradeLock && T.tradeLock.has(id)));
+  const maxSign = T.bal + Math.max(0, ...canOut.map(id => T.paid[id] || 0));
+  const pend = (T.mineLive || []).filter(t => ['pending','negotiating'].includes(t.status)).length;
+  return `<div class="stats" style="margin:12px 0 4px">
+      <div class="stat"><b>${value}M</b><span>valor de la plantilla</span></div>
+      <div class="stat"><b style="${T.bal < 0 ? 'color:var(--bad)' : ''}">${T.bal}M</b><span>saldo disponible</span></div>
+      <div class="stat"><b>${Math.max(maxSign, 0)}M</b><span>fichaje máximo sin quedar en negativo</span></div></div>
+    <div class="small muted">${pend ? `Incluye ${pend === 1 ? 'tu fichaje pendiente' : 'tus ' + pend + ' fichajes pendientes'}, que se confirma${pend === 1 ? '' : 'n'} al cierre. ` : ''}El fichaje máximo es soltando a tu jugador más caro.</div>`; }
 function drawTeam(){
   const L = S.lu, T = S.td;
   const reqIn = id => T.mineLive.find(t => t.player_in === id);
@@ -883,6 +894,7 @@ function drawTeam(){
     <div class="card" style="margin-top:12px">
       <div class="between"><div class="name">${T.week ? 'Jornada ' + T.week.week_no : 'Temporada terminada'}</div><span class="pill ${L.dirty?'':'ok'}" style="white-space:nowrap">${status}</span></div>
       <div class="small muted">${T.week ? 'Se puede cambiar hasta ' + fmtLock(T.week) + ' (1 h antes del primer partido). Hasta entonces nadie ve la tuya.' : ''}</div>
+      ${teamMoney()}
     </div>
     ${boostersCard()}
     <h2>Quinteto titular <span class="small muted">· ${T.week ? tot + ' partidos entre los cinco' : ''}</span></h2>
