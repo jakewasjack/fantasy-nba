@@ -260,12 +260,13 @@ html.skin2 .ment{color:var(--accent-on)} html.skin2 .ment.me{background:var(--ac
 /* Cabecera + DeadlineBanner */
 .h2wrap{position:sticky;top:0;z-index:12;margin:0 calc(-1 * var(--space-20));background:var(--bg-surface)}
 .h2bar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:calc(10px + env(safe-area-inset-top)) var(--space-20) 10px;background:var(--bg-surface)}
-.h2logo{flex:none;background:none;border:0;padding:0;width:28px;height:28px;border-radius:0;margin-right:-4px}
+.h2logo{flex:none;background:none;border:0;padding:0;width:40px;height:40px;border-radius:0;margin-right:-4px;display:block}
 .h2logo:active{background:none;opacity:.6}
-.h2logo img{width:28px;height:28px;display:block}
+.h2logo img{width:100%;height:100%;display:block}
 .h2id{min-width:0;flex:1}
-.h2team{font:400 22px/1 var(--font-title);color:var(--greyscale-black100);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.h2team{font:400 24px/1 var(--font-title);color:var(--greyscale-black100);white-space:nowrap;overflow:hidden}
 .h2league{font:400 12px/1.3 var(--font-body);color:var(--greyscale-black60);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.h2bar .h2league{text-overflow:clip}
 .h2act{display:flex;align-items:center;gap:18px;padding:0 3px;flex:none}
 .h2act button{background:none;border:0;padding:0;width:25px;height:25px;display:inline-flex;align-items:center;justify-content:center;position:relative;border-radius:0}
 .h2act button:active{background:none;opacity:.6}
@@ -564,7 +565,7 @@ function render(){
   if(S.tab !== 'hoy') stopTick();
   if(S.tab !== 'mercado' || !S.room) stopRoomPoll();
   if(S.view){ stopTick(); stopRoomPoll(); $('#app').innerHTML = '<main id="tab"></main>'; return renderView(); }
-  if(V2){ $('#app').innerHTML = header2(tabs) + '<main id="tab"></main>'; dlbPaint();
+  if(V2){ $('#app').innerHTML = header2(tabs) + '<main id="tab"></main>'; fitHeader(); dlbPaint();
     ({ draft:renderDraft, hoy:renderHome, equipo:renderTeam, mercado:renderMarket, pred:renderPred, liga:renderLiga })[S.tab](); return; }
   $('#app').innerHTML = `
     <div class="between" style="margin-top:14px">
@@ -2862,6 +2863,12 @@ function header2(tabs){ S.tabs2 = tabs; const me = member(S.user.id);
       <button onclick="openView('notis')" aria-label="Notificaciones"><img src="assets/icon-bell.svg" alt=""><span id="bellN" class="bellN ${S.unread?'':'hidden'}">${S.unread > 9 ? '9+' : (S.unread || '')}</span></button>
       <button onclick="menu2(true)" aria-label="Abrir menú" aria-haspopup="dialog"><img src="assets/icon-burger.svg" alt=""></button></div></header>
     <div id="dlb"></div></div>`; }
+function fitHeader(){ const id = document.querySelector('.h2id'), t = document.querySelector('.h2team'), l = document.querySelector('.h2bar .h2league'), lg = document.querySelector('.h2logo'); if(!id || !t || !l) return;
+  let k = 1; t.style.fontSize = '24px'; l.style.fontSize = '12px'; l.style.marginTop = '3px';
+  for(let i = 0; i < 40 && t.scrollWidth > t.clientWidth + 0.5 && k > 0.55; i++){ k -= 0.02; t.style.fontSize = (24 * k) + 'px'; l.style.fontSize = (12 * k) + 'px'; l.style.marginTop = (3 * k) + 'px'; }
+  if(lg){ const h = Math.round(t.getBoundingClientRect().height + l.getBoundingClientRect().height + 3 * k); lg.style.width = lg.style.height = h + 'px'; } }
+window.addEventListener('resize', () => fitHeader());
+try{ document.fonts && document.fonts.ready.then(() => fitHeader()); }catch(e){}
 // Estados del componente DeadlineBanner: calm (falta más de un día), ready (último día), missing (sin alineación)
 function dlbPaint(){ const el = $('#dlb'); if(!el) return; const T = S.td, w = T && T.week;
   if(!w || S.league.draft_status !== 'cerrado'){ el.innerHTML = ''; return; }
