@@ -2871,8 +2871,8 @@ function menu2(open){ const old = $('#h2m'); if(old) old.remove(); document.remo
   const tabs = S.tabs2 || [], m = document.createElement('div'); m.id = 'h2m'; m.className = 'h2menu'; m.setAttribute('role', 'dialog'); m.setAttribute('aria-label', 'Menú');
   m.innerHTML = `<nav class="h2panel"><div class="top"><div class="h2league">${esc(S.league.name)}</div><button class="x" onclick="menu2(false)" aria-label="Cerrar menú">✕</button></div>
     <div class="h2nav">${tabs.map(([k, t]) => `<button class="${S.tab === k && !S.view ? 'on' : ''}" onclick="menu2(false);S.view=null;goTab('${k}');window.scrollTo(0,0)">${t}</button>`).join('')}</div>
-    <div class="h2sub"><button onclick="menu2(false);openView('hemeroteca')">📰 The Chronicle · hemeroteca</button><button onclick="menu2(false);openView('reglas')">📘 Reglas y puntuación</button>
-      ${isComm() ? `<button onclick="menu2(false);openView('comi')">🛠️ Panel del comisionado</button>` : ''}<button onclick="menu2(false);openView('perfil')">👤 Perfil y ajustes</button></div></nav>`;
+    <div class="h2sub"><button onclick="menu2(false);openView('hemeroteca')">The Chronicle · hemeroteca</button><button onclick="menu2(false);openView('reglas')">Reglas y puntuación</button>
+      ${isComm() ? `<button onclick="menu2(false);openView('comi')">Panel del comisionado</button>` : ''}<button onclick="menu2(false);openView('perfil')">Perfil y ajustes</button></div></nav>`;
   m.onclick = e => { if(e.target === m) menu2(false); };
   document.body.appendChild(m); document.addEventListener('keydown', menu2Esc); }
 function menu2Esc(e){ if(e.key === 'Escape') menu2(false); }
