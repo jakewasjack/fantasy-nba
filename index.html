@@ -1304,12 +1304,12 @@ function challengesCard(){
   return `<h2>Challenges</h2><div class="card" style="padding:4px 14px"><ul class="list">${rows.map(r => `<li><span style="font-size:20px">${r[0]}</span><div class="grow"><div class="name">${r[1]}</div><div class="small muted">${r[2]} · ${r[3]}</div></div><span class="pill ${r[4]==='Activo'?'ok':''}">${r[4]}</span></li>`).join('')}</ul>
     <p class="small muted" style="margin:6px 0 10px">Nada de esto suma puntos de liga: la liga se decide por jornadas. Los challenges dan ventajas para gastar durante la temporada.</p></div>`;
 }
-// ---------- Jornada cerrada: tarjeta en Hoy durante 48 h ----------
+// ---------- Jornada cerrada: tarjeta en Hoy durante 24 h ----------
 async function loadLastFinal(){
   S.lastFinal = null;
   try {
     const { data:c } = await sb.from('league_week_close').select('week_no,closed_at,mode').eq('league_id', S.league.id).order('week_no', { ascending:false }).limit(1);
-    const cl = c && c[0]; if(!cl || Date.now() - new Date(cl.closed_at) > 48*3600e3) return;
+    const cl = c && c[0]; if(!cl || Date.now() - new Date(cl.closed_at) > 24*3600e3) return;
     const [ws, dw, ins] = await Promise.all([
       sb.rpc('week_scores', { p_league:S.league.id, p_week:cl.week_no }),
       sb.from('drafteados_week').select('player_ids').eq('season', SEASON).eq('week_no', cl.week_no).maybeSingle(),
