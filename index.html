@@ -1096,8 +1096,8 @@ function drawMarket(){
           <div class="small muted">${posBadge(p.pos,1)} ${p.team}${p.fp!=null?' · '+Number(p.fp).toFixed(1)+' FPPG':''}${p.rookie?' · <span class="pill ok">rookie</span>':''} · ${g?g.n+' part.':'sin partidos'}</div>
           ${injLine(p.id)}${formLine(p.id)}
           ${others.length ? `<div class="small" style="color:var(--accent)">En disputa entre ${others.map(t=>esc(member(t.user_id).team)).join(' y ')} · <a href="#" onclick="openRoom(${p.id});return false" style="color:inherit">ver la mesa</a></div>` : ''}
-          ${rsv ? `<div class="small" style="color:${blocked?'var(--bad)':'var(--ok)'}">${blocked ? 'Reservado esta jornada para ' + esc(member(rsv).team) : 'Reservado para ti esta jornada'}</div>` : ''}</div>
-          ${!blocked && p.price > maxPrice ? `<div class="small" style="color:var(--bad)">Te deja en negativo: tendrás que cuadrar antes del cierre</div>` : ''}
+          ${rsv ? `<div class="small" style="color:${blocked?'var(--bad)':'var(--ok)'}">${blocked ? 'Reservado esta jornada para ' + esc(member(rsv).team) : 'Reservado para ti esta jornada'}</div>` : ''}
+          ${!blocked && p.price > maxPrice ? `<div class="small" style="color:var(--bad)">Te deja en negativo: tendrás que cuadrar antes del cierre</div>` : ''}</div>
         <button class="sm" ${blocked ? 'disabled' : ''} onclick="mkPick(${p.id})">${M.out && M.armed===p.id ? 'Confirmar' : 'Fichar'}</button>
       </li>`}).join('') || '<li class="muted">Nadie con ese filtro</li>'}
     </ul>`}`}`;
