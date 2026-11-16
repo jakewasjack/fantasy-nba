@@ -2538,8 +2538,8 @@ async function viewComm(){
       <p class="small" style="margin:0 0 10px">${dm(W.starts_on||today)} – ${dm(W.ends_on==='9999'?today:W.ends_on)} · <b>${st(W)}</b>${C ? ' el ' + new Date(C.closed_at).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : ''}</p>
       ${missH.length ? `<p class="small" style="margin:0 0 10px;color:var(--bad)"><b>Faltan las estadísticas de esfuerzo (hustle)</b> de ${missH.map(d=>dm(d.game_date)).join(', ')}. Se descargan solas desde tu Mac (9:52 y 21:52) si está encendido con Claude abierto. Ábrelo y espera a la siguiente descarga, o pídeselo a Claude, antes de cerrar la jornada.</p>` : ''}
       ${can ? '' : `<p class="small muted" style="margin:0 0 10px">Esta jornada aún no ha terminado: podrás cerrarla a partir del lunes siguiente.</p>`}
-      ${[0,1,2,3,4].map(i=>`<label class="small muted">Jugador ${i+1}</label><input name="p${i}" value="${C && C.mode==='none' ? '' : esc(label(cur[i]))}" placeholder="Escribe y elige" ${can?'':'disabled'}>`).join('')}
-      <button style="width:100%" ${can?'':'disabled'}>${C ? 'Corregir quinteto y cerrar' : 'Guardar quinteto y cerrar jornada'}</button>
+      ${[0,1,2,3,4].map(i=>`<label class="small muted">Jugador ${i+1}</label><input name="p${i}" value="${C && C.mode==='none' ? '' : esc(label(cur[i]))}" placeholder="Escribe y elige" enterkeyhint="${i<4?'next':'done'}" ${can?'':'disabled'}>`).join('')}
+      <button id="d5save" style="width:100%" ${can?'':'disabled'}>${C ? 'Corregir quinteto y cerrar' : 'Guardar quinteto y cerrar jornada'}</button>
       <button type="button" class="ghost" id="d5none" style="width:100%;margin-top:8px" ${can && !(C && C.mode==='none') ? '' : 'disabled'}>${S.d5none === S.d5w ? 'Pulsa otra vez: cerrar SIN quinteto' : 'Esta semana no hay quinteto'}</button>
       <p class="small muted" style="margin:8px 0 0">Cada jugador del quinteto da +1M de saldo a quien lo tuviera en su alineación esa jornada (no suma puntos). Al cerrar se anuncia en el muro. Puedes corregirlo después si te equivocas.</p>
     </form>
@@ -2567,8 +2567,11 @@ async function viewComm(){
     S.d5none = null;
     const { error } = await sb.rpc('close_week_without_five', { p_league:S.league.id, p_week:S.d5w });
     if(error) return fail(error); toast('Jornada ' + S.d5w + ' cerrada sin quinteto'); viewComm(); };
-  document.querySelectorAll('#d5 input[name^=p]').forEach(i => attachTypeahead(i, S.players));
-  $('#d5').onsubmit = async e => { e.preventDefault(); const f = new FormData(e.target), ids = [];
+  const d5in = [...document.querySelectorAll('#d5 input[name^=p]')];
+  d5in.forEach((i, k) => { attachTypeahead(i, S.players);
+    // Intro / «Siguiente» del teclado nunca guarda: pasa al siguiente jugador o cierra el teclado
+    i.addEventListener('keydown', ev => { if(ev.key !== 'Enter') return; ev.preventDefault(); d5in[k+1] ? d5in[k+1].focus() : i.blur(); }); });
+  $('#d5').onsubmit = async e => { e.preventDefault(); if(!e.submitter || e.submitter.id !== 'd5save') return; const f = new FormData(e.target), ids = [];
     for(let i=0;i<5;i++){ const v = (f.get('p'+i)||'').trim(); if(!v) return fail('Faltan jugadores: el quinteto son 5.'); const p = resolvePlayer(v, S.players); if(typeof p === 'string') return fail(p); if(ids.includes(p.id)) return fail(p.name + ' está repetido'); ids.push(p.id); }
     const { error } = await sb.rpc('set_drafteados_five', { p_league:S.league.id, p_week:S.d5w, p_players:ids });
     if(error) return fail(error); toast('Quinteto guardado · jornada ' + S.d5w + ' cerrada'); viewComm(); };
