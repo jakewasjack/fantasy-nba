@@ -2035,7 +2035,7 @@ function airDraw(){ const c = ARC.cx, g = ARC.g, W = 320, H = 220; if(!c || !g) 
 }
 // ---------- DROP: máquina de 16 pads (homenaje a J Dilla) ----------
 // Todo el sonido se sintetiza en el navegador con Web Audio: sin samples de terceros.
-const DROP = { kit:'lofi', bpm:80, bars:2, feel:0, ev:[], rec:false, playing:false, metro:true, ctx:null };
+const DROP = { kit:'lofi', bpm:80, bars:4, feel:0, ev:[], rec:false, playing:false, metro:true, ctx:null };
 const DKITS = {
   lofi: { name:'Lo-fi', bpm:80, cut:3200, drive:1.6, crackle:.035 },
   east: { name:'East Coast', bpm:92, cut:7500, drive:3.2, crackle:.012 },
@@ -2144,10 +2144,11 @@ function dQ(b, feel){ const g = Math.round(b * 4) / 4; return g + (b - g) * feel
 function dropHit(i, rec){ const A = dropCtx(), p = DPADS[DROP.kit][i]; if(!p) return; p[1](A.currentTime + .005);
   const el = document.querySelector(`.dpad[data-i="${i}"]`); if(el){ el.classList.add('hit'); setTimeout(() => el.classList.remove('hit'), 110); }
   dLcd(p[0]);
-  if(rec && DROP.rec && DROP.playing){ const tb = (A.currentTime - DROP.t0) / dBeat(), lb = dLoopBeats(); let n = Math.floor(tb / lb); const beat = tb - n * lb; if(Math.round(beat * 4) / 4 >= lb) n++; DROP.ev.push([Math.round(beat * 1000) / 1000, i, n]); dLcd(p[0] + ' ● ' + DROP.ev.length); } }
+  if(rec && DROP.rec && DROP.playing){ let tb = (A.currentTime - DROP.t0) / dBeat(), lb = dLoopBeats(); if(tb < -.25) return; if(tb < 0) tb = 0; let n = Math.floor(tb / lb); const beat = tb - n * lb; if(Math.round(beat * 4) / 4 >= lb) n++; DROP.ev.push([Math.round(beat * 1000) / 1000, i, n]); dLcd(p[0] + ' ● ' + DROP.ev.length); } }
 function dLcd(t){ const l = $('#dLcd2'); if(l) l.textContent = t; }
 // Secuenciador: bucle de N compases con programación anticipada
 function dropPlay(ev, opts = {}){ const A = dropCtx(); dropStopSeq();
+  ev.forEach(e => { if(e.length > 2) e.length = 2; });
   DROP.playing = true; DROP.t0 = A.currentTime + (opts.lead || .12); DROP.next = 0; DROP.loops = 0; DROP.seqEv = ev; DROP.maxLoops = opts.loops || 0;
   const tick = () => { if(!DROP.playing) return; const now = A.currentTime, ahead = now + .15, bl = dBeat(), L = dLoopBeats();
     while(DROP.t0 + DROP.next * bl < ahead){
@@ -2200,7 +2201,10 @@ function dropBind(){
     if(DROP.playing) dropPlay(DROP.ev); else $('#dLcd1').textContent = `${DKITS[DROP.kit].name} · ${DROP.bpm} BPM`; });
   $('#dPlay').onclick = () => { if(DROP.playing){ dropStopSeq(); DROP.rec = false; $('#dRec').classList.remove('on'); $('#dPlay').textContent = '▶ PLAY'; dLcd('Parado'); }
     else { dropPlay(DROP.ev); $('#dPlay').textContent = '■ STOP'; } };
-  $('#dRec').onclick = () => { DROP.rec = !DROP.rec; $('#dRec').classList.toggle('on', DROP.rec); if(DROP.rec && !DROP.playing){ dropPlay(DROP.ev); $('#dPlay').textContent = '■ STOP'; } dLcd(DROP.rec ? 'Grabando: toca los pads' : 'Grabación en pausa'); };
+  $('#dRec').onclick = () => { DROP.rec = !DROP.rec; $('#dRec').classList.toggle('on', DROP.rec); if(DROP.rec && !DROP.playing){ const A = dropCtx(), bl = dBeat(), lead = 4 * bl + .15; dropPlay(DROP.ev, { lead }); $('#dPlay').textContent = '■ STOP';
+      for(let k = 0; k < 4; k++){ const t = DROP.t0 - (4 - k) * bl; dOsc('square', k === 0 ? 1500 : 1000, t, .05, .06, .03, DROP.comp); setTimeout(() => { if(DROP.rec) dLcd('Entras en ' + (4 - k) + '…'); }, Math.max(0, (t - A.currentTime) * 1000)); }
+      setTimeout(() => { if(DROP.rec) dLcd('● Grabando: toca los pads'); }, Math.max(0, (DROP.t0 - A.currentTime) * 1000)); return; }
+    dLcd(DROP.rec ? 'Grabando: toca los pads' : 'Grabación en pausa'); };
   // Se vacía el mismo array que está sonando (si se sustituyera, el bucle seguiría tocando la copia antigua)
   $('#dClr').onclick = () => { DROP.ev.length = 0; dLcd(DROP.playing ? 'Bucle vacío · sigue el click' : 'Bucle vacío'); };
   $('#dMet').onclick = () => { DROP.metro = !DROP.metro; $('#dMet').textContent = DROP.metro ? 'CLICK ON' : 'CLICK OFF'; };
