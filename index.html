@@ -2201,7 +2201,8 @@ function dropBind(){
   $('#dPlay').onclick = () => { if(DROP.playing){ dropStopSeq(); DROP.rec = false; $('#dRec').classList.remove('on'); $('#dPlay').textContent = '▶ PLAY'; dLcd('Parado'); }
     else { dropPlay(DROP.ev); $('#dPlay').textContent = '■ STOP'; } };
   $('#dRec').onclick = () => { DROP.rec = !DROP.rec; $('#dRec').classList.toggle('on', DROP.rec); if(DROP.rec && !DROP.playing){ dropPlay(DROP.ev); $('#dPlay').textContent = '■ STOP'; } dLcd(DROP.rec ? 'Grabando: toca los pads' : 'Grabación en pausa'); };
-  $('#dClr').onclick = () => { DROP.ev = []; dLcd('Bucle vacío'); };
+  // Se vacía el mismo array que está sonando (si se sustituyera, el bucle seguiría tocando la copia antigua)
+  $('#dClr').onclick = () => { DROP.ev.length = 0; dLcd(DROP.playing ? 'Bucle vacío · sigue el click' : 'Bucle vacío'); };
   $('#dMet').onclick = () => { DROP.metro = !DROP.metro; $('#dMet').textContent = DROP.metro ? 'CLICK ON' : 'CLICK OFF'; };
   document.querySelectorAll('[data-bars]').forEach(b => b.onclick = () => { const n = +b.dataset.bars; if(n === DROP.bars) return;
     // al acortar, lo que queda fuera del nuevo bucle se descarta; al alargar, lo grabado se repite para llenar los compases nuevos
