@@ -237,6 +237,15 @@ html.skin2{
 html.skin2, html.skin2 body{font-family:var(--font-body);background:var(--bg-canvas);color:var(--text-primary)}
 html.skin2 body{padding:0 var(--space-20) calc(32px + env(safe-area-inset-bottom))}
 html.skin2 .card{border-color:transparent}
+/* Arcade (Triples, AIR, DROP): conserva la paleta oscura original dentro del overlay */
+html.skin2 .arcm{
+  --bg:#0f1115; --surface:#181b22; --surface2:#20242d; --line:#2b303b;
+  --text:#eef0f4; --muted:#9aa2b1; --accent:#f28c28; --accent-ink:#1a1206; --ok:#3fb37f; --bad:#e5534b;
+  --text-primary:#eef0f4; --text-secondary:#9aa2b1; --bg-surface:#181b22; --bg-canvas:#0f1115; --border-default:#2b303b;
+  --accent-default:#f28c28; --accent-pressed:#d97a1c; --greyscale-white100:#20242d;
+  color:var(--text); color-scheme:dark;
+}
+html.skin2 .arcm button{font-weight:600}
 html.skin2 input, html.skin2 select{background:var(--bg-surface);border-color:var(--border-default);color:var(--text-primary)}
 html.skin2 button{color:var(--text-primary);font-weight:400}
 html.skin2 button:active{background:var(--accent-pressed)}
