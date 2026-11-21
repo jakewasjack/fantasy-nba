@@ -247,7 +247,7 @@ html.skin2 .card{border-color:transparent}
 .court2{position:relative;height:262px;border-radius:12px;overflow:hidden;background:var(--accentlight-orange15, #1d1a14)}
 .court2 svg{position:absolute;inset:0;width:100%;height:100%}
 .court2 svg *{stroke:var(--accent);stroke-opacity:.45;fill:none;stroke-width:1.6}
-.tk{position:absolute;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:2px;background:none!important;border:0;padding:0;width:104px;color:var(--text);cursor:pointer;font-weight:400}
+.tk{position:absolute;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:2px;background:none!important;border:0;padding:0!important;min-height:0;width:104px;color:var(--text);cursor:pointer;font-weight:400}
 .tk:active{opacity:.7}
 .tkc{position:relative;width:42px;height:42px;border-radius:50%;background:var(--tc);box-shadow:0 0 0 3px var(--tr), 0 3px 8px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;color:#fff;font:400 19px/1 var(--font-title, inherit);letter-spacing:.5px}
 .tk.sm .tkc{width:34px;height:34px;font-size:15px;box-shadow:0 0 0 2px var(--tr)}
@@ -263,12 +263,13 @@ html.skin2 .card{border-color:transparent}
 .tk.off .tkc{filter:grayscale(1);opacity:.45}
 .tk.hole .tkc{background:transparent;box-shadow:none;border:2px dashed var(--muted);color:var(--muted);font-size:13px}
 .tk .by{font-size:10px;color:var(--muted);line-height:1}
-.pista-bench{display:grid;grid-template-columns:auto 1fr;gap:0 10px;margin-top:8px}
-.pista-bench .lbl{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:2px}
-.pista-bench .grp{display:flex;gap:2px;overflow-x:auto;padding:5px 2px 0}
-.pista-bench .grp.b{border-left:1px solid var(--line);padding-left:8px}
-.pista-bench .tk{position:relative;transform:none;width:70px;flex:0 0 auto}
-.pista-bench .tk .tkn{max-width:70px}
+.pista-bench{display:grid;grid-template-columns:repeat(var(--n),minmax(0,1fr));gap:0 2px;margin-top:8px}
+.pista-bench .lbl{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:4px;white-space:nowrap}
+.pista-bench .lbl.b{border-left:1px solid var(--line);padding-left:6px}
+.pista-bench .tk{position:relative;transform:none;width:100%;min-width:0;padding:5px 0 0!important;min-height:0}
+.pista-bench .tk .tkn{max-width:100%;font-size:11px;padding:1px 4px}
+.pista-bench .tk .tkp{font-size:10px}.pista-bench .tk .tkp b{font-size:12px}
+.tkc .six{top:-7px;right:-14px;width:auto;padding:0 4px;border-radius:9px;background:var(--text);color:var(--surface);box-shadow:0 0 0 2px var(--surface)}
 .tk.sel .tkc{outline:3px solid var(--accent);outline-offset:3px}
 .pista-det{margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
 /* Arcade (Triples, AIR, DROP): conserva la paleta oscura original dentro del overlay */
@@ -799,7 +800,7 @@ function pistaToken(id, o = {}){
   if(id == null || id < 0) return `<button class="tk hole ${o.sm ? 'sm' : ''}" style="${o.pos || ''}" onclick="${o.hole ? o.hole : ''}"><span class="tkc">Libre</span><span class="tkn">Puesto libre</span><span class="tkp">cuenta 0</span></button>`;
   const p = S.byId[id] || {}, col = NBA_COL[p.team] || ['#595959', '#ACACAC'], r = S.inj[id];
   const inj = r ? `<i class="inj ${injOut(r) ? '' : 'duda'}" title="${esc(injText(r))}">+</i>` : '';
-  const cap = o.cap ? `<i class="cap">${o.cap}</i>` : '';
+  const cap = o.cap ? `<i class="cap">${o.cap}</i>` : o.six ? '<i class="six">6º</i>' : '';
   const f = S.form[id], last = f && f.length ? f[f.length - 1] : null, fp = p.fp;
   const trend = last && last.fp != null && fp ? (last.fp >= fp * 1.1 ? ' <span class="up" title="Anoche ' + fmtP(last.fp) + '">▲</span>' : last.fp <= fp * 0.9 ? ' <span class="dn" title="Anoche ' + fmtP(last.fp) + '">▼</span>' : '') : '';
   const line = o.games == null ? `${p.team || ''}`
@@ -856,8 +857,8 @@ function drawPista(){
     <div class="pista-h"><div><div class="t">En pista · Jornada ${P.wk}</div><div class="sub">${closed ? 'Final' : 'En juego'}${d.pending_hustle ? ' · ' + d.pending_hustle + ' por confirmar' : ''} · puntos que suma · partidos</div></div>
       <div class="tot"><b>${fmtP(x.total)}</b><span>${x.rank ? x.rank + 'º de ' + n : ''}</span></div></div>
     <div class="court2">${PISTA_SVG}${order.map((s, i) => tok(s, i)).join('')}</div>
-    <div class="pista-bench"><div><div class="lbl">Sexto</div><div class="grp">${six ? tok(six, 0, { pos:'' }) : ''}</div></div>
-      <div style="min-width:0"><div class="lbl" style="padding-left:9px">Banquillo · suma el ${Math.round((d.bench_rate || .2) * 100)}%</div><div class="grp b">${bench}</div></div></div>
+    <div class="pista-bench" style="--n:${1 + (d.bench_slots || []).length}"><div class="lbl">Sexto</div><div class="lbl b" style="grid-column:span ${Math.max(1, (d.bench_slots || []).length)}">Banquillo · suma el ${Math.round((d.bench_rate || .2) * 100)}%</div>
+      ${six ? tok(six, 0, { pos:'', sm:true, six:true }) : '<span></span>'}${bench}</div>
     <div class="row" style="margin-top:10px"><button class="sm" onclick="S.jw=${P.wk};openJornada('box')">Box score</button><button class="sm ghost" onclick="pistaEdit()">Editar alineación</button></div>
   </div>`;
 }
