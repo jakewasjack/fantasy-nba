@@ -238,19 +238,19 @@ html.skin2, html.skin2 body{font-family:var(--font-body);background:var(--bg-can
 html.skin2 body{padding:0 var(--space-20) calc(32px + env(safe-area-inset-bottom))}
 html.skin2 .card{border-color:transparent}
 /* ---------- En pista (Plantilla): el quinteto de la jornada en juego ---------- */
-.pista-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin:12px 0}
-.pista-h{display:flex;justify-content:space-between;align-items:flex-end;gap:8px;margin-bottom:10px}
-.pista-h .t{font:400 22px/1 var(--font-title, inherit);text-transform:uppercase;letter-spacing:.3px}
+.pista-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:12px;margin:10px 0}
+.pista-h{display:flex;justify-content:space-between;align-items:flex-end;gap:8px;margin-bottom:8px}
+.pista-h .t{font:400 20px/1 var(--font-title, inherit);text-transform:uppercase;letter-spacing:.3px}
 .pista-h .sub{font-size:12px;color:var(--muted);margin-top:4px}
-.pista-h .tot{text-align:right}.pista-h .tot b{font:400 30px/1 var(--font-title, inherit);display:block}
+.pista-h .tot{text-align:right}.pista-h .tot b{font:400 26px/1 var(--font-title, inherit);display:block}
 .pista-h .tot span{font-size:12px;color:var(--muted)}
-.court2{position:relative;height:350px;border-radius:12px;overflow:hidden;background:var(--accentlight-orange15, #1d1a14)}
+.court2{position:relative;height:262px;border-radius:12px;overflow:hidden;background:var(--accentlight-orange15, #1d1a14)}
 .court2 svg{position:absolute;inset:0;width:100%;height:100%}
 .court2 svg *{stroke:var(--accent);stroke-opacity:.45;fill:none;stroke-width:1.6}
-.tk{position:absolute;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:3px;background:none!important;border:0;padding:0;width:104px;color:var(--text);cursor:pointer;font-weight:400}
+.tk{position:absolute;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:2px;background:none!important;border:0;padding:0;width:104px;color:var(--text);cursor:pointer;font-weight:400}
 .tk:active{opacity:.7}
-.tkc{position:relative;width:50px;height:50px;border-radius:50%;background:var(--tc);box-shadow:0 0 0 3px var(--tr), 0 3px 8px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;color:#fff;font:400 22px/1 var(--font-title, inherit);letter-spacing:.5px}
-.tk.sm .tkc{width:38px;height:38px;font-size:17px;box-shadow:0 0 0 2px var(--tr)}
+.tkc{position:relative;width:42px;height:42px;border-radius:50%;background:var(--tc);box-shadow:0 0 0 3px var(--tr), 0 3px 8px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;color:#fff;font:400 19px/1 var(--font-title, inherit);letter-spacing:.5px}
+.tk.sm .tkc{width:34px;height:34px;font-size:15px;box-shadow:0 0 0 2px var(--tr)}
 .tkc i{position:absolute;font-style:normal;font:700 10px/1 var(--font-body, system-ui);width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center}
 .tkc .cap{top:-5px;right:-6px;background:var(--accent);color:var(--accent-ink);box-shadow:0 0 0 2px var(--surface)}
 .tkc .inj{top:-5px;left:-6px;background:#fff;color:var(--bad);border:1.5px solid var(--bad);font-size:13px}
@@ -262,9 +262,9 @@ html.skin2 .card{border-color:transparent}
 .tk.off .tkc{filter:grayscale(1);opacity:.45}
 .tk.hole .tkc{background:transparent;box-shadow:none;border:2px dashed var(--muted);color:var(--muted);font-size:13px}
 .tk .by{font-size:10px;color:var(--muted);line-height:1}
-.pista-bench{display:grid;grid-template-columns:auto 1fr;gap:0 10px;margin-top:12px}
-.pista-bench .lbl{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
-.pista-bench .grp{display:flex;gap:2px;overflow-x:auto;padding:6px 2px 2px}
+.pista-bench{display:grid;grid-template-columns:auto 1fr;gap:0 10px;margin-top:8px}
+.pista-bench .lbl{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:2px}
+.pista-bench .grp{display:flex;gap:2px;overflow-x:auto;padding:5px 2px 0}
 .pista-bench .grp.b{border-left:1px solid var(--line);padding-left:8px}
 .pista-bench .tk{position:relative;transform:none;width:70px;flex:0 0 auto}
 .pista-bench .tk .tkn{max-width:70px}
@@ -804,13 +804,13 @@ function pistaToken(id, o = {}){
   const line = o.games == null ? `${p.team || ''}`
     : o.games > 0 ? `<b>${fmtP(o.avg)}</b> · ${o.games}${o.total ? '/' + o.total : ''}${trend}`
     : o.total ? `0/${o.total} part.` : 'sin partidos';
-  const isSel = S.pista && S.pista.sel && S.pista.sel.id === id;
+  const isSel = false;
   return `<button class="tk ${o.sm ? 'sm' : ''} ${o.off ? 'off' : ''} ${isSel ? 'sel' : ''} ${o.cls || ''}" style="${o.pos || ''}" onclick="pistaTap(${id}, ${o.k || 0})" aria-label="${esc(p.name || '')}">
     <span class="tkc" style="--tc:${col[0]};--tr:${col[1]}">${esc(p.num ?? '')}${cap}${inj}</span>
     <span class="tkn">${lastName(id)}</span><span class="tkp">${line}</span>${o.by ? `<span class="by">por ${lastName(o.by)}</span>` : ''}</button>`;
 }
 // Puntos de la pista: dos exteriores arriba, dos aleros en las alas y el pívot en la zona
-const PISTA_POS = ['left:27%;top:4%', 'left:73%;top:4%', 'left:15%;top:36%', 'left:85%;top:36%', 'left:50%;top:55%'];
+const PISTA_POS = ['left:27%;top:3%', 'left:73%;top:3%', 'left:15%;top:34%', 'left:85%;top:34%', 'left:50%;top:52%'];
 const PISTA_SVG = `<svg viewBox="0 0 360 350" preserveAspectRatio="none" aria-hidden="true">
   <rect x="6" y="6" width="348" height="338" rx="10"/>
   <path d="M30 344 V286 A150 150 0 0 1 330 286 V344"/>
@@ -851,31 +851,49 @@ function drawPista(){
       cap: capOf(s.player), by: s.by ? s.player : null, off: !s.by && s.games === 0 && closed, k: 1, hole: 'pistaEdit()' }); };
   const subTok = (s) => { const t = tot(s.by); return pistaToken(s.by, { pos: '', games: undefined, cap: capOf(s.player), by: s.player, k: 1 }); };
   const bench = (d.bench_slots || []).map(b => pistaToken(b.player < 0 ? null : b.player, { sm:true, games: b.games, avg: b.avg, total: tot(b.player), off: b.used || (closed && !b.games), cls: b.used ? 'used' : '', k: 2 })).join('');
-  const sel = P.sel;
   box.innerHTML = `<div class="pista-card">
     <div class="pista-h"><div><div class="t">En pista · Jornada ${P.wk}</div><div class="sub">${closed ? 'Final' : 'En juego'}${d.pending_hustle ? ' · ' + d.pending_hustle + ' por confirmar' : ''} · media · partidos jugados</div></div>
       <div class="tot"><b>${fmtP(x.total)}</b><span>${x.rank ? x.rank + 'º de ' + n : ''}</span></div></div>
     <div class="court2">${PISTA_SVG}${order.map((s, i) => tok(s, i)).join('')}</div>
     <div class="pista-bench"><div><div class="lbl">Sexto</div><div class="grp">${six ? tok(six, 0, { pos:'' }) : ''}</div></div>
       <div style="min-width:0"><div class="lbl" style="padding-left:9px">Banquillo · suma el ${Math.round((d.bench_rate || .2) * 100)}%</div><div class="grp b">${bench}</div></div></div>
-    <div id="pistaDet">${sel ? '<div class="pista-det"><span class="small muted">Cargando…</span></div>' : ''}</div>
-    <div class="row" style="margin-top:12px"><button class="sm" onclick="S.jw=${P.wk};openJornada('box')">Box score</button><button class="sm ghost" onclick="pistaEdit()">Editar alineación</button></div>
+    <div class="row" style="margin-top:10px"><button class="sm" onclick="S.jw=${P.wk};openJornada('box')">Box score</button><button class="sm ghost" onclick="pistaEdit()">Editar alineación</button></div>
   </div>`;
-  if(sel) pistaDetail(sel.id, sel.k);
 }
 function pistaEdit(){ const el = $('#luEd'); if(el) el.scrollIntoView({ behavior:'smooth', block:'start' }); }
-function pistaTap(id, k){ const P = S.pista; if(!P) return; P.sel = P.sel && P.sel.id === id ? null : { id, k }; drawPista(); if(P.sel) $('#pistaDet').scrollIntoView({ behavior:'smooth', block:'nearest' }); }
-async function pistaDetail(id, k){
-  const P = S.pista, d = P.me.detail, el = $('#pistaDet'); if(!el) return;
+function pistaTap(id){ if(!S.pista) return; S.pj = id; openView('jugador'); }
+// Ficha del jugador en la jornada (se abre desde la pista)
+async function viewPlayer(){
+  const P = S.pista, id = S.pj, p = S.byId[id] || {};
+  const back = '<p style="margin-top:14px"><a href="#" onclick="closeView();return false">← Volver a la alineación</a></p>';
+  if(!P || !P.me || !id){ $('#tab').innerHTML = back; return; }
+  $('#tab').innerHTML = back + `<h1>${esc(p.name || '')}</h1><p class="muted">Cargando…</p>`;
+  const d = P.me.detail, wk = P.wk, key = wk + ':' + id;
   const s = d.slots.find(x => (x.by || x.player) === id), b = (d.bench_slots || []).find(x => x.player === id);
+  const [bd, ws] = await Promise.all([
+    S.bd[key] ? Promise.resolve({ data:S.bd[key] }) : sb.rpc('player_week_breakdown', { p_week:wk, p_player:id }),
+    sb.rpc('week_player_stats_full', { p_week:wk, p_players:[id] }) ]);
+  if(bd.error) return fail(bd.error); S.bd[key] = bd.data || [];
+  if(S.view !== 'jugador' || S.pj !== id) return;
+  const w = (ws.data || [])[0] || {}, tot = P.games[p.team] || 0, games = s ? (s.by ? (w.games || 0) : s.games) : b ? b.games : 0;
+  const role = s ? (s.mult === 2 ? 'Capitán ×2' : s.by ? 'Entra por ' + pname(s.player) : s.slot === 'sexto' ? 'Sexto hombre' : 'Titular') : (b && b.used ? 'Banquillo · entra por un titular' : 'Banquillo · suma el ' + Math.round((d.bench_rate || .2) * 100) + '%');
+  const pts = s ? s.points : b ? b.points : 0, avg = s ? s.avg : b ? b.avg : w.fp;
   const ds = s ? { p:id, sub: s.by ? s.player : '', m: s.mult, b:0, k:'st', pts: s.points } : { p:id, m:1, b:0, k:'bench', pts: b ? b.points : 0 };
-  const key = P.wk + ':' + id;
-  if(!S.bd[key]){ const { data, error } = await sb.rpc('player_week_breakdown', { p_week:P.wk, p_player:id }); if(error) return fail(error); S.bd[key] = data || []; }
-  if(!P.sel || P.sel.id !== id) return;
-  const p = S.byId[id] || {}, role = s ? (s.mult === 2 ? 'Capitán ×2' : s.slot === 'sexto' ? 'Sexto hombre' : 'Titular') : (b && b.used ? 'Banquillo · entra por un titular' : 'Banquillo · suma el ' + Math.round((d.bench_rate || .2) * 100) + '%');
-  S.wsWeek = P.wk;
-  el.innerHTML = `<div class="pista-det"><div class="between"><div><div class="name">${esc(p.name || '')}${injIcon(id)}</div><div class="small muted">${p.team || ''}${p.num ? ' · #' + esc(p.num) : ''} · ${role}</div></div><b>${fmtP(s ? s.points : b ? b.points : 0)}</b></div>
-    ${injLine(id)}<div style="margin-top:8px">${bdHTML(S.bd[key], ds, false)}</div></div>`;
+  const col = NBA_COL[p.team] || ['#595959', '#ACACAC'], f1 = n => n == null ? '–' : fmtP(n);
+  const avgRow = w.games ? `<div class="card" style="padding:10px 6px;margin:10px 0 4px"><div style="display:grid;grid-template-columns:repeat(7,1fr);text-align:center">${[['min','Min'],['pts','Pts'],['reb','Reb'],['ast','Ast'],['stl','Rob'],['blk','Tap'],['tov','Pérd']].map(([k, t]) => `<div><b style="font-size:15px">${f1(w[k])}</b><div class="small muted">${t}</div></div>`).join('')}</div></div><p class="small muted" style="margin:0">Medias por partido en la jornada ${wk}.</p>` : '';
+  S.wsWeek = wk;
+  $('#tab').innerHTML = back + `
+    <div style="display:flex;gap:12px;align-items:center;margin:6px 0 4px">
+      <span class="tkc" style="--tc:${col[0]};--tr:${col[1]};flex:0 0 auto;width:52px;height:52px;font-size:24px">${esc(p.num ?? '')}</span>
+      <div><h1 style="margin:0">${esc(p.name || '')}${injIcon(id)}</h1><div class="small muted">${p.team || ''}${p.num ? ' · #' + esc(p.num) : ''} · ${posBadge(posOf(id), true)} · ${role}</div></div></div>
+    ${injLine(id)}
+    <div class="stats" style="margin:12px 0 4px">
+      <div class="stat"><b>${fmtP(pts)}</b><span>suma al equipo</span></div>
+      <div class="stat"><b>${games ? fmtP(avg) : '–'}</b><span>media de la jornada</span></div>
+      <div class="stat"><b>${games}${tot ? '/' + tot : ''}</b><span>partidos jugados</span></div></div>
+    ${avgRow}
+    <h2>Partido a partido · Jornada ${wk}</h2>
+    <div class="card">${bdHTML(S.bd[key], ds, false)}</div>`;
 }
 function bestLineup(ids){
   const fp = id => S.byId[id]?.fp ?? -1;
@@ -2566,7 +2584,7 @@ async function beatPlay(id){
 }
 
 function renderView(){
-  ({ perfil:viewProfile, reglas:viewRules, comi:viewComm, arcade:viewArcade, notis:viewNotis, jornada:viewJornada, hemeroteca:viewHemeroteca })[S.view]();
+  ({ perfil:viewProfile, reglas:viewRules, comi:viewComm, arcade:viewArcade, notis:viewNotis, jornada:viewJornada, hemeroteca:viewHemeroteca, jugador:viewPlayer })[S.view]();
 }
 function viewProfile(){
   const me = member(S.user.id), cur = me.avatar || '';
