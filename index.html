@@ -851,7 +851,7 @@ function drawPista(){
     return pistaToken(s.player < 0 ? null : who, { ...extra, pos: extra.pos ?? PISTA_POS[i], games: s.by ? undefined : s.games, avg: s.avg, total: tot(who),
       cap: capOf(s.player), mult: s.mult, by: s.by ? s.player : null, off: !s.by && s.games === 0 && closed, k: 1, hole: 'pistaEdit()' }); };
   const subTok = (s) => { const t = tot(s.by); return pistaToken(s.by, { pos: '', games: undefined, cap: capOf(s.player), by: s.player, k: 1 }); };
-  const bench = (d.bench_slots || []).map(b => pistaToken(b.player < 0 ? null : b.player, { sm:true, games: b.games, avg: b.avg, total: tot(b.player), off: b.used || (closed && !b.games), cls: b.used ? 'used' : '', k: 2 })).join('');
+  const bench = (d.bench_slots || []).map(b => pistaToken(b.player < 0 ? null : b.player, { sm:true, games: b.games, avg: b.used ? b.avg : b.points, total: tot(b.player), off: b.used || (closed && !b.games), cls: b.used ? 'used' : '', k: 2 })).join('');
   box.innerHTML = `<div class="pista-card">
     <div class="pista-h"><div><div class="t">En pista · Jornada ${P.wk}</div><div class="sub">${closed ? 'Final' : 'En juego'}${d.pending_hustle ? ' · ' + d.pending_hustle + ' por confirmar' : ''} · puntos que suma · partidos</div></div>
       <div class="tot"><b>${fmtP(x.total)}</b><span>${x.rank ? x.rank + 'º de ' + n : ''}</span></div></div>
