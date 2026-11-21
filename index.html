@@ -258,6 +258,7 @@ html.skin2 .card{border-color:transparent}
 .tkn{font-size:12px;font-weight:600;line-height:1.1;max-width:104px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--surface);padding:2px 6px;border-radius:6px}
 .tkp{font-size:11px;color:var(--muted);line-height:1.1;white-space:nowrap}
 .tkp b{color:var(--text);font-size:13px}
+.tkp .x2{font-size:10px;font-weight:700;color:var(--accent-ink);background:var(--accent);border-radius:4px;padding:0 3px}
 .tkp .up{color:var(--ok)}.tkp .dn{color:var(--bad)}
 .tk.off .tkc{filter:grayscale(1);opacity:.45}
 .tk.hole .tkc{background:transparent;box-shadow:none;border:2px dashed var(--muted);color:var(--muted);font-size:13px}
@@ -802,7 +803,7 @@ function pistaToken(id, o = {}){
   const f = S.form[id], last = f && f.length ? f[f.length - 1] : null, fp = p.fp;
   const trend = last && last.fp != null && fp ? (last.fp >= fp * 1.1 ? ' <span class="up" title="Anoche ' + fmtP(last.fp) + '">▲</span>' : last.fp <= fp * 0.9 ? ' <span class="dn" title="Anoche ' + fmtP(last.fp) + '">▼</span>' : '') : '';
   const line = o.games == null ? `${p.team || ''}`
-    : o.games > 0 ? `<b>${fmtP(o.avg)}</b> · ${o.games}${o.total ? '/' + o.total : ''}${trend}`
+    : o.games > 0 ? `<b>${fmtP(o.mult === 2 ? o.avg * 2 : o.avg)}</b>${o.mult === 2 ? ' <span class="x2">×2</span>' : ''} · ${o.games}${o.total ? '/' + o.total : ''}${trend}`
     : o.total ? `0/${o.total} part.` : 'sin partidos';
   const isSel = false;
   return `<button class="tk ${o.sm ? 'sm' : ''} ${o.off ? 'off' : ''} ${isSel ? 'sel' : ''} ${o.cls || ''}" style="${o.pos || ''}" onclick="pistaTap(${id}, ${o.k || 0})" aria-label="${esc(p.name || '')}">
@@ -848,11 +849,11 @@ function drawPista(){
   const order = st.slice().sort((a, b) => posRank(a.player) - posRank(b.player));
   const tok = (s, i, extra = {}) => { const who = s.by || s.player;
     return pistaToken(s.player < 0 ? null : who, { ...extra, pos: extra.pos ?? PISTA_POS[i], games: s.by ? undefined : s.games, avg: s.avg, total: tot(who),
-      cap: capOf(s.player), by: s.by ? s.player : null, off: !s.by && s.games === 0 && closed, k: 1, hole: 'pistaEdit()' }); };
+      cap: capOf(s.player), mult: s.mult, by: s.by ? s.player : null, off: !s.by && s.games === 0 && closed, k: 1, hole: 'pistaEdit()' }); };
   const subTok = (s) => { const t = tot(s.by); return pistaToken(s.by, { pos: '', games: undefined, cap: capOf(s.player), by: s.player, k: 1 }); };
   const bench = (d.bench_slots || []).map(b => pistaToken(b.player < 0 ? null : b.player, { sm:true, games: b.games, avg: b.avg, total: tot(b.player), off: b.used || (closed && !b.games), cls: b.used ? 'used' : '', k: 2 })).join('');
   box.innerHTML = `<div class="pista-card">
-    <div class="pista-h"><div><div class="t">En pista · Jornada ${P.wk}</div><div class="sub">${closed ? 'Final' : 'En juego'}${d.pending_hustle ? ' · ' + d.pending_hustle + ' por confirmar' : ''} · media · partidos jugados</div></div>
+    <div class="pista-h"><div><div class="t">En pista · Jornada ${P.wk}</div><div class="sub">${closed ? 'Final' : 'En juego'}${d.pending_hustle ? ' · ' + d.pending_hustle + ' por confirmar' : ''} · puntos que suma · partidos</div></div>
       <div class="tot"><b>${fmtP(x.total)}</b><span>${x.rank ? x.rank + 'º de ' + n : ''}</span></div></div>
     <div class="court2">${PISTA_SVG}${order.map((s, i) => tok(s, i)).join('')}</div>
     <div class="pista-bench"><div><div class="lbl">Sexto</div><div class="grp">${six ? tok(six, 0, { pos:'' }) : ''}</div></div>
