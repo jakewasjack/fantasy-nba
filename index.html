@@ -786,8 +786,8 @@ function courtStrip(ids){
     <div class="reqs">${chip(R.hasG,'var(--pG)','Mín. 1 exterior')}${chip(R.hasF,'var(--pF)','Mín. 1 alero')}${chip(R.pureC<=2,'var(--pC)',`Pívots puros ${R.pureC}/2`)}</div>`;
 }
 // ---------- En pista: el equipo de la jornada en juego, sobre media pista ----------
-// Prototipo: de momento solo lo ve el comisionado (o quien abra la app con ?pista=1; ?pista=0 lo quita)
-function pistaOn(){ try{ const q = new URLSearchParams(location.search).get('pista'); if(q === '1') localStorage.setItem('pista', '1'); if(q === '0') localStorage.removeItem('pista'); return isComm() || localStorage.getItem('pista') === '1'; }catch(e){ return isComm(); } }
+// Para todos desde el 21 nov (con ?pista=0 se ve la Plantilla anterior)
+function pistaOn(){ try{ return new URLSearchParams(location.search).get('pista') !== '0'; }catch(e){ return true; } }
 // Colores de los equipos NBA (fondo del círculo y aro exterior). Solo colores, sin logos.
 const NBA_COL = { ATL:['#C8102E','#FDB927'], BOS:['#007A33','#BA9653'], BKN:['#111111','#9a9a9a'], CHA:['#1D1160','#00788C'], CHI:['#CE1141','#111111'],
   CLE:['#860038','#FDBB30'], DAL:['#00538C','#B8C4CA'], DEN:['#0E2240','#FEC524'], DET:['#C8102E','#1D42BA'], GSW:['#1D428A','#FFC72C'],
